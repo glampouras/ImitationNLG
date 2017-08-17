@@ -17,6 +17,8 @@ class WQE(imitation.ImitationLearner):
     # Might want to consider this too:
     # http: // www.python - course.eu / python3_class_and_instance_attributes.php
     stages = [utils.WordPredictor]
+    # we can just use the state here, as we only need the actions
+    stateType = imitation.State
 
 
     def __init__(self):
@@ -35,7 +37,7 @@ class WQE(imitation.ImitationLearner):
     
 class WQEInput(imitation.StructuredInput):
     def __init__(self, tokens):
-        super().__init__()
+        #super().__init__()
         self.tokens = tokens
 
     def __str__(self):
@@ -44,7 +46,7 @@ class WQEInput(imitation.StructuredInput):
 
 class WQEOutput(imitation.StructuredOutput):
     def __init__(self, tags):
-        super().__init__()
+        #super().__init__()
         self.tags = tags
 
     def __str__(self):

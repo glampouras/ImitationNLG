@@ -12,6 +12,7 @@ class ImitationLearner(object):
     # this is to be specified by the class that inherits this.
     # might be worth turning it into a function that initializes the stages based on data?
     stages = None
+    stateType = None
 
     def __init__(self):
         self.stageNo2model = []
@@ -31,7 +32,7 @@ class ImitationLearner(object):
     #@profile
     def predict(self, structuredInstance, state=None, optimalPolicyProb=0.0):
         if state== None:
-            state = State()
+            state = self.stateType()
 
         # if we haven't started predicting, initialize the state for prediction
         if state.currentStageNo < 0:
@@ -99,15 +100,15 @@ class ImitationLearner(object):
             
             for structuredInstance in structuredInstances:
 
-                state = State()
+                state = self.stateType()
                 # so we obtain the predicted output and the actions taken are in state
                 # this prediction uses the gold standard since we need this info for the optimal policy actions
                 newOutput = self.predict(structuredInstance, state, optimalPolicyProb)
 
                 # how good is the current policy compared to the gold?
-                structuredInstance.output.compareAgainst(newOutput)
+                #structuredInstance.output.compareAgainst(newOutput)
                 
-                stateCopy = State()
+                stateCopy = self.stateType()
                 # for each action in every stage taken in predicting the output
                 for stageNo, stage in enumerate(state.currentStages):
                     # Enter the new stage, starting from 0

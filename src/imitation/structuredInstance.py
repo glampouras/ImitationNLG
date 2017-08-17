@@ -7,18 +7,18 @@ class StructuredInstance(object):
 
 class StructuredInput(object):
     def __init__(self):
-        pass
+        raise NotImplementedError
 
 
 class StructuredOutput(object):
 
     # you should be able to take a (partial/complete) state and go to an output
     def __init__(self, state=None):
-        pass
+        raise NotImplementedError
 
     # it must return an evalStats object with a loss
-    def compareAgainst(self, other):
-        pass
+    def compareAgainst(self, predicted):
+        raise NotImplementedError
 
 
 class EvalStats(object):
