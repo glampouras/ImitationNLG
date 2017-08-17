@@ -117,6 +117,9 @@ class ImitationLearner(object):
                     for action in stage.actionsTaken:
                         # DAgger just ask the expert
                         expert_action = stage.optimalPolicy(stateCopy, structuredInstance, action)
+                        # if we wanted to have costs-to-go, we should assess all possible labels:
+                        #print("inside imitation learner")
+                        #print(stage.possibleLabels)
 
                         # add the labeled features to the training data
                         stageNo2trainingFeatures[stageNo].append(action.features)

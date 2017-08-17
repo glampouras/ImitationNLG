@@ -24,7 +24,6 @@ class Stage(object):
 
     # construct action agenda
     def __init__(self, state=None, structuredInstance=None):
-        self.argType = None
         self.agenda = deque([])
         self.actionsTaken = []
     

@@ -13,9 +13,7 @@ class WordPredictor(Stage):
 
     # the agenda for word prediction is one action per token
     def __init__(self, state=None, structuredInstance=None):
-        # TODO: consider combining it with the main file
         super(WordPredictor, self).__init__()
-        self.possibleLabels = ["GOOD", "BAD"] # TODO: Whatever is the gold standard, could make it data dependent
         # Assume 0 indexing for the tokens
         if structuredInstance == None:
             return

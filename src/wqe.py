@@ -9,20 +9,15 @@ from sacred import Experiment
 
 ex = Experiment()
 
-# from .imitation.imitationLearner import ImitationLearner
-
-
-#from .imitation.structuredInstance import StructuredInput
-#from .imitation.structuredInstance import StructuredOutput
-#from .imitation.structuredInstance import StructuredInstance
-#from .imitation.structuredInstance import EvalStats
-#from .imitation.state import State
 
 class WQE(imitation.ImitationLearner):
 
     # specify the stages
-    #
+    # they are class variables, since any instance of WQE will have the same stages (types)
+    # Might want to consider this too:
+    # http: // www.python - course.eu / python3_class_and_instance_attributes.php
     stages = [wqe.WordPredictor]
+
 
     def __init__(self):
         super(WQE,self).__init__()
@@ -89,6 +84,7 @@ def toy_experiment():
                         WQEInstance(["clean", "walk", "tennis", "walk"])]
 
     wqe = WQE()
+    wqe.stages[0].possibleLabels = ["GOOD", "BAD"]
 
     # set the params
     params = WQE.params()
