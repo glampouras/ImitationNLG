@@ -3,7 +3,7 @@
 
 import imitation
 
-import wqe
+import utils
 
 from sacred import Experiment
 
@@ -16,7 +16,7 @@ class WQE(imitation.ImitationLearner):
     # they are class variables, since any instance of WQE will have the same stages (types)
     # Might want to consider this too:
     # http: // www.python - course.eu / python3_class_and_instance_attributes.php
-    stages = [wqe.WordPredictor]
+    stages = [utils.WordPredictor]
 
 
     def __init__(self):
