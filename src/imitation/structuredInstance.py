@@ -1,3 +1,5 @@
+# A lot of this could be enhanced with the abc module for Abstract Base Classes
+
 class StructuredInstance(object):
     
     def __init__(self):
