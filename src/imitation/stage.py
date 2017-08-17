@@ -9,6 +9,19 @@ from collections import deque
 
 class Stage(object):
 
+
+    class Action(object):
+        def __init__(self):
+            self.label = None
+            self.features = []
+
+        def __deepcopy__(self, memo):
+            newone = type(self)()
+            newone.__dict__.update(self.__dict__)
+            newone.features = deepcopy(self.features)
+            return newone
+
+
     # construct action agenda
     def __init__(self, state=None, structuredInstance=None):
         self.argType = None

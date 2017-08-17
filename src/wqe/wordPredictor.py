@@ -5,18 +5,11 @@ from copy import copy, deepcopy
 
 class WordPredictor(Stage):
 
-    class Action(object):
+    class WordAction(Stage.Action):
         def __init__(self):
-            self.label = None
-            self.features = []
+            super(Stage.Action,self).__init__()
             # This keeps the info needed to know which action we are taking
             self.tokenNo = -1
-
-        def __deepcopy__(self, memo):
-            newone = type(self)()
-            newone.__dict__.update(self.__dict__)
-            newone.features = deepcopy(self.features)
-            return newone
 
     # the agenda for word prediction is one action per token
     def __init__(self, state=None, structuredInstance=None):
