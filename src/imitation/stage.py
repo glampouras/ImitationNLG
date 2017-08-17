@@ -5,7 +5,7 @@ A common interface for all stages.
 """
 
 from collections import deque
-
+from copy import deepcopy
 
 class Stage(object):
 

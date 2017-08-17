@@ -6,13 +6,14 @@ class StructuredInstance(object):
 
 
 class StructuredInput(object):
-    pass            
+    def __init__(self):
+        pass
 
 
 class StructuredOutput(object):
 
     # you should be able to take a (partial/complete) state and go to an output
-    def __init__(self, state):
+    def __init__(self, state=None):
         pass
 
     # it must return an evalStats object with a loss

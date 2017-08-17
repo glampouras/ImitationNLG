@@ -1,1 +1,1 @@
-from . import wordPredictor
+from .wordPredictor import WordPredictor

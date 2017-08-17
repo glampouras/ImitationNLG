@@ -35,6 +35,7 @@ class WQE(imitation.ImitationLearner):
     
 class WQEInput(imitation.StructuredInput):
     def __init__(self, tokens):
+        super().__init__()
         self.tokens = tokens
 
     def __str__(self):
@@ -43,6 +44,7 @@ class WQEInput(imitation.StructuredInput):
 
 class WQEOutput(imitation.StructuredOutput):
     def __init__(self, tags):
+        super().__init__()
         self.tags = tags
 
     def __str__(self):
@@ -62,13 +64,15 @@ class WQEOutput(imitation.StructuredOutput):
 
 
 class WQEEvalStats(imitation.EvalStats):
-    def __init__(self):    
+    def __init__(self):
+        super().__init__()
         self.loss = 0 # number of incorrect tags
         self.accuracy = 1.0        
 
 
 class WQEInstance(imitation.StructuredInstance):
     def __init__(self, tokens, tags=None):
+        super().__init__()
         self.input = WQEInput(tokens)
         self.output = WQEOutput(tags)
 

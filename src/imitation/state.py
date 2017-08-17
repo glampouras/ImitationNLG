@@ -1,4 +1,4 @@
-from copy import copy, deepcopy
+from copy import deepcopy
 
 
 # This is a basic definition of the state. But it can be overriden/made more complicated to support:
@@ -7,10 +7,9 @@ from copy import copy, deepcopy
 
 class State(object):
 
-    def __init__(self) -> object:
+    def __init__(self):
         self.currentStageNo = -1
         self.currentStages = []
-        
 
     #@profile
     def copyState(self):

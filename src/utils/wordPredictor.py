@@ -7,7 +7,7 @@ class WordPredictor(Stage):
 
     class WordAction(Stage.Action):
         def __init__(self):
-            super(Stage.Action,self).__init__()
+            super().__init__()
             # This keeps the info needed to know which action we are taking
             self.tokenNo = -1
 
