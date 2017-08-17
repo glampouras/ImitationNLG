@@ -37,6 +37,7 @@ class WQE(imitation.ImitationLearner):
     
 class WQEInput(imitation.StructuredInput):
     def __init__(self, tokens):
+        # no point in calling it, it is abstract and must be overriden
         #super().__init__()
         self.tokens = tokens
 
@@ -46,7 +47,6 @@ class WQEInput(imitation.StructuredInput):
 
 class WQEOutput(imitation.StructuredOutput):
     def __init__(self, tags):
-        #super().__init__()
         self.tags = tags
 
     def __str__(self):
