@@ -13,7 +13,7 @@ class DatasetInstance(object):
 
         # A reference for the word actions of the DatasetInstance; this is constructed using the reference directly
         # corresponding to this instance in the dataset
-        self.directReferenceSequence = directReferenceSequence
+        self.setDirectReferenceSequence(directReferenceSequence)
         # Realized string of the word actions in the direct reference
         self.directReference = directReference
 
@@ -41,7 +41,7 @@ class DatasetInstance(object):
     def copy(self, other):
         self.MR = copy.copy(other.MR)
 
-        self.directReferenceSequence = copy.copy(other.directReferenceSequence)
+        self.setDirectReferenceSequence(copy.copy(other.directReferenceSequence))
         self.directReference = copy.copy(other.directReference)
 
         self.evaluationReferences = set()
@@ -58,9 +58,11 @@ class DatasetInstance(object):
             previousAttr = ""
             for act in self.directReferenceSequence:
                 if act.attribute != previousAttr:
-                    if act.attribute != Action.TOKEN_END:
+                    if act.attribute != Action.TOKEN_END and act.attribute != Action.TOKEN_PUNCT and act.attribute != '[]':
                         self.directAttrSequence.append(Action(Action.TOKEN_START, act.attribute))
-                    else:
+                    elif act.attribute == '[]' and act.word.startswith(Action.TOKEN_X):
+                        self.directAttrSequence.append(Action(Action.TOKEN_START, act.word[3:act.word.find('_')]))
+                    elif act.attribute == Action.TOKEN_END:
                         self.directAttrSequence.append(Action(Action.TOKEN_END, act.attribute))
                 if act.attribute != Action.TOKEN_PUNCT:
                     previousAttr = act.attribute
@@ -70,6 +72,7 @@ class DatasetInstance(object):
      Returns (and constructs when first called) a sequence of content actions
      based on the direct reference of this DatasetInstance.
      @return A sequence of content actions.
+    '''
     '''
     def getEvaluationReferenceAttrValueSequences(self):
         if not self.evaluationAttrSequences and self.evaluationReferenceSequences:
@@ -87,6 +90,7 @@ class DatasetInstance(object):
                         previousAttr = act.attribute
                 self.evaluationAttrSequences.append(evaluationAttrSequence)
         return self.evaluationAttrSequences
+    '''
 
     '''
      Sets the word action sequence (and also constructs the corresponding content action sequence) 

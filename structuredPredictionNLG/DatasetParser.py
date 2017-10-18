@@ -1,9 +1,13 @@
 # Gerasimos Lampouras, 2017:
-from collections import defaultdict
 from Action import Action
 from MeaningRepresentation import MeaningRepresentation
 from DatasetInstance import DatasetInstance
+from SimpleContentPredictor import SimpleContentPredictor
+import os.path
 import re
+import Levenshtein
+import _pickle as pickle
+from nltk.util import ngrams
 
 '''
  This is a general specification of a DatasetParser.
@@ -12,33 +16,79 @@ import re
 '''
 class DatasetParser(object):
 
-    def __init__(self, dataFile):
+    def __init__(self, trainingFile, developmentFile, testingFile, datasetID):
         self.singlePredicate = 'inform'
+        self.dataset = datasetID
 
-        self.predicates = []
-        self.attributes = defaultdict()
-        self.attributeValuePairs = defaultdict()
-        self.valueAlignments = defaultdict()
-        self.datasetInstances = defaultdict()
+        reset = True
 
-        self.attributes[self.singlePredicate] = set()
-        self.datasetInstances[self.singlePredicate] = []
+        if (reset or not self.loadTrainingLists()) and trainingFile:
+            self.predicates = []
+            self.attributes = {}
+            self.valueAlignments = {}
+            self.trainingInstances = {}
 
-        self.maxWordSequenceLength = 0
-        self.maxContentSequenceLength = 0
+            self.attributes[self.singlePredicate] = set()
+            self.trainingInstances[self.singlePredicate] = []
 
-        self.createLists(dataFile)
+            self.maxWordSequenceLength = 0
+
+            self.createLists(trainingFile, self.trainingInstances, True)
+
+            # Create the evaluation refs for train data, as described in https://github.com/tuetschek/e2e-metrics/tree/master/example-inputs
+            for predicate in self.trainingInstances:
+                for di in self.trainingInstances[predicate]:
+                    refs = set()
+                    for di2 in self.trainingInstances[predicate]:
+                        if di != di2 and di2.MR.MRstr == di.MR.MRstr:
+                            refs.add(di2.directReference)
+                    di.evaluationReferences = refs
+            self.writeTrainingLists()
+        if (reset or not self.loadDevelopmentLists()) and developmentFile:
+            self.developmentInstances = {}
+            self.developmentInstances[self.singlePredicate] = []
+
+            self.createLists(developmentFile, self.developmentInstances, False)
+
+            # Create the evaluation refs for DEV data, as described in https://github.com/tuetschek/e2e-metrics/tree/master/example-inputs
+            for predicate in self.developmentInstances:
+                for di in self.developmentInstances[predicate]:
+                    refs = set()
+                    for di2 in self.developmentInstances[predicate]:
+                        if di != di2 and di2.MR.MRstr == di.MR.MRstr:
+                            refs.add(di2.directReference)
+                    di.evaluationReferences = refs
+            self.writeDevelopmentLists()
+        if (reset or not self.loadTestingLists()) and testingFile:
+            self.testingInstances = {}
+            self.testingInstances[self.singlePredicate] = []
+
+            self.createLists(testingFile, self.testingInstances, False)
+            self.writeTestingLists()
+
         # Test that loading was correct
-        print(len(self.datasetInstances))
-        for di in self.datasetInstances[self.singlePredicate]:
+        '''
+        print(len(self.trainingInstances))
+        for di in self.trainingInstances[self.singlePredicate]:
             print(di.MR.MRstr)
             print(di.MR.attributeValues)
             print(di.MR.delexicalizationMap)
-            print(di.directReference)
+            print(di.getDirectReferenceAttrValueSequence())
+            print(di.directReferenceSequence)
+            print()
+        '''
+
+        # Example of training and using the SimpleContentPredictor
+        self.contentPredictor = SimpleContentPredictor(self.dataset, self.attributes, self.trainingInstances)
+        for di in self.developmentInstances[self.singlePredicate]:
+            print(di.MR.MRstr)
+            print(di.MR.attributeValues)
+            print(di.getDirectReferenceAttrValueSequence())
+            print(self.contentPredictor.rollContentSequence_withLearnedPolicy(di))
             print()
 
-    def createLists(self, dataFile):
-        print("create lists")
+    def createLists(self, dataFile, instances, forTrain = False):
+        print("Create lists from ", dataFile, "...")
 
         dataPart = []
 
@@ -52,24 +102,17 @@ class DatasetParser(object):
 
         # This dataset has no predicates, so we assume a default predicate
         self.predicates.append(self.singlePredicate)
-        # This actually fixes nothing...
-        # Fix some errors in the data set
-        '''
-        for i, s in enumerate(dataPart):
-            if "\"," not in s:
-                line = dataPart[i - 1]
-                line += s
-                dataPart[i - 1] = line
-                dataPart.remove(i)
-        '''
-
         num = 0
         # Each line corresponds to a MR
         for line in dataPart:
             num += 1
 
-            MRPart = line.split("\",")[0]
-            refPart = line.split("\",")[1].lower()
+            if "\"," in line:
+                MRPart = line.split("\",")[0]
+                refPart = line.split("\",")[1].lower()
+            else:
+                MRPart = line
+                refPart = ""
 
             if MRPart.startswith("\""):
                 MRPart = MRPart[1:]
@@ -77,13 +120,14 @@ class DatasetParser(object):
                 refPart = refPart[1:]
             if refPart.endswith("\""):
                 refPart = refPart[:-1]
+            refPart = re.sub("([.,?:;!'-])", " \g<1> ", refPart)
             refPart = refPart.replace("\\?", " \\? ").replace("\\.", " \\.").replace(",", " , ").replace("  ", " ").strip()
             MRAttrValues = MRPart.split(",")
 
             # Map from original values to delexicalized values
-            delexicalizedMap = defaultdict()
+            delexicalizedMap = {}
             # Map attributes to their values
-            attributeValues = defaultdict()
+            attributeValues = {}
 
             for attrValue in MRAttrValues:
                 value = attrValue[attrValue.find("[") + 1:attrValue.find("]")].strip().lower()
@@ -95,80 +139,84 @@ class DatasetParser(object):
                     value = delexValue
                 if value == "yes" or value == "no":
                     value = attribute + "_" + value
-                self.attributes[self.singlePredicate] = set()
+
+                if forTrain and self.singlePredicate not in self.attributes:
+                    self.attributes[self.singlePredicate] = set()
                 if attribute:
-                    self.attributes[self.singlePredicate].add(attribute)
-                    if attribute not in self.attributeValuePairs:
-                        self.attributeValuePairs[attribute] = set()
+                    if forTrain:
+                        self.attributes[self.singlePredicate].add(attribute)
                     if attribute not in attributeValues:
                         attributeValues[attribute] = set()
                     if value:
-                        self.attributeValuePairs[attribute].add(value)
                         attributeValues[attribute].add(value)
 
             for deValue in delexicalizedMap.keys():
                 value = delexicalizedMap[deValue]
                 if (" " + value.lower() + " ") in (" " + refPart + " "):
                     refPart = (" " + refPart + " ").replace((" " + value.lower() + " "), (" " + deValue + " ")).strip()
+                elif value.lower() in refPart:
+                    refPart = refPart.replace(value.lower(), deValue).strip()
 
             observedWordSequence = []
 
-            words = refPart.replace(", ,", " , ").replace(". .", " . ").replace("[.,?:;!'-]", " $0 ").replace("  ", " ").split(" ")
+            words = refPart.replace(", ,", " , ").replace(". .", " . ").replace("  ", " ").split(" ")
             for word in words:
                 if "0f" in word:
                     word = word.replace("0f", "of")
 
-                '''
-                TO-DO: Fix these python patterns
-                p0 = re.compile("^@x@([a-z]+)_([0-9]+)")
-                p1 = re.compile("([0-9]+)([a-z]+)")
-                p2 = re.compile("([a-z]+)([0-9]+)")
-                p3 = re.compile("(£)([a-z]+)")
-                p4 = re.compile("([a-z]+)(£[0-9]+)")
-                p5 = re.compile("([0-9]+)([a-z]+)([0-9]+)")
-                p6 = re.compile("([0-9]+)(@x@[a-z]+_0)")
-                p7 = re.compile("(£[0-9]+)([a-z]+)")
-                if p0.match(word) and word != (m0.group(0))) {
-                    String var = m0.group(0);
-                    String realValue = delexicalizedMap.get(var);
-                    realValue = w.replace(var, realValue);
-                    delexicalizedMap.put(var, realValue);
-                    observedWordSequence.add(var.trim());
-                } else if (m1.matches() && m1.group(2).trim().equals("o")) {
-                    observedWordSequence.add(m1.group(1).trim() + "0");
-                } else if (m1.matches()) {
-                    observedWordSequence.add(m1.group(1).trim());
-                    observedWordSequence.add(m1.group(2).trim());
-                } else if (m2.matches() && (m2.group(1).trim().equals("l") || m2.group(1).trim().equals("e"))) {
-                    observedWordSequence.add("£" + m2.group(2).trim());
-                } else if (m2.matches()) {
-                    observedWordSequence.add(m2.group(1).trim());
-                    observedWordSequence.add(m2.group(2).trim());
-                } else if (m3.matches()) {
-                    observedWordSequence.add(m3.group(1).trim());
-                    observedWordSequence.add(m3.group(2).trim());
-                } else if (m4.matches()) {
-                    observedWordSequence.add(m4.group(1).trim());
-                    observedWordSequence.add(m4.group(2).trim());
-                } else if (m5.matches()) {
-                    observedWordSequence.add(m5.group(1).trim());
-                    observedWordSequence.add(m5.group(2).trim());
-                    observedWordSequence.add(m5.group(3).trim());
-                } else if (m6.matches()) {
-                    observedWordSequence.add(m6.group(1).trim());
-                    observedWordSequence.add(m6.group(2).trim());
-                } else if (m7.matches() && m7.group(2).trim().equals("o")) {
-                    observedWordSequence.add(m7.group(1).trim() + "0");
-                } else {
-                    observedWordSequence.add(w.trim());
-                }
-                '''
-                observedWordSequence.append(word.strip())
+                m = re.search("^@x@([a-z]+)_([0-9]+)", word)
+                if m and m.group(0) != word:
+                    var = m.group(0);
+                    realValue = delexicalizedMap.get(var)
+                    realValue = word.replace(var, realValue)
+                    delexicalizedMap[var] = realValue
+                    observedWordSequence.append(var.strip())
+                else:
+                    m = re.match("([0-9]+)([a-z]+)", word)
+                    if m and m.group(1).strip() == "o":
+                        observedWordSequence.add(m.group(1).strip() + "0")
+                    elif m:
+                        observedWordSequence.append(m.group(1).strip())
+                        observedWordSequence.append(m.group(2).strip())
+                    else:
+                        m = re.match("([a-z]+)([0-9]+)", word)
+                        if m and (m.group(1).strip() == "l" or m.group(1).strip() == "e"):
+                            observedWordSequence.append("£" + m.group(2).strip())
+                        elif m:
+                            observedWordSequence.append(m.group(1).strip())
+                            observedWordSequence.append(m.group(2).strip())
+                        else:
+                            m = re.match("(£)([a-z]+)", word)
+                            if m:
+                                observedWordSequence.append(m.group(1).strip())
+                                observedWordSequence.append(m.group(2).strip())
+                            else:
+                                m = re.match("([a-z]+)(£[0-9]+)", word)
+                                if m:
+                                    observedWordSequence.append(m.group(1).strip())
+                                    observedWordSequence.append(m.group(2).strip())
+                                else:
+                                    m = re.match("([0-9]+)([a-z]+)([0-9]+)", word)
+                                    if m:
+                                        observedWordSequence.append(m.group(1).strip())
+                                        observedWordSequence.append(m.group(2).strip())
+                                        observedWordSequence.append(m.group(3).strip())
+                                    else:
+                                        m = re.match("([0-9]+)(@x@[a-z]+_0)", word)
+                                        if m:
+                                            observedWordSequence.append(m.group(1).strip())
+                                            observedWordSequence.append(m.group(2).strip())
+                                        else:
+                                            m = re.match("(£[0-9]+)([a-z]+)", word)
+                                            if m and m.group(2).strip() == "o":
+                                                observedWordSequence.append(m.group(1).strip() + "0")
+                                            else:
+                                                observedWordSequence.append(word.strip())
 
             MR = MeaningRepresentation(self.singlePredicate, attributeValues, MRPart, delexicalizedMap)
 
             # We store the maximum observed word sequence length, to use as a limit during generation
-            if len(observedWordSequence) > self.maxWordSequenceLength:
+            if forTrain and len(observedWordSequence) > self.maxWordSequenceLength:
                 self.maxWordSequenceLength = len(observedWordSequence)
 
             # We initialize the alignments between words and attribute/value pairs
@@ -182,10 +230,156 @@ class DatasetParser(object):
             for r, word in enumerate(observedWordSequence):
                 directReferenceSequence.append(Action(word, wordToAttrValueAlignment[r]))
 
-            DI = DatasetInstance(MR, directReferenceSequence, self.postProcessRef(MR, directReferenceSequence))
-            self.datasetInstances[self.singlePredicate].append(DI)
+            if directReferenceSequence:
+                # Align subphrases of the sentence to attribute values
+                observedValueAlignments = {}
+                valueToAttr = {}
+                for attr in MR.attributeValues.keys():
+                    values = sorted(list(MR.attributeValues[attr]))
+                    for value in values:
+                        if not value.startswith(Action.TOKEN_X):
+                            observedValueAlignments[value] = set()
+                            valueToAttr[value] = attr
+                            valuesToCompare = [value, attr]
+                            for valueToCompare in valuesToCompare:
+                                # obtain n-grams from the sentence
+                                for n in range(1, 6):
+                                    grams = ngrams(directReferenceSequence, n)
 
-    def postProcessRef(self, mr, refSeq):
+                                    # calculate the similarities between each gram and valueToCompare
+                                    for gram in grams:
+                                        if Action.TOKEN_X not in gram and Action.TOKEN_PUNCT not in gram:
+                                            compare = " ".join(o.word for o in gram)
+                                            backwardCompare = " ".join(o.word for o in reversed(gram))
+
+                                            if compare.strip():
+                                                # Calculate the character-level distance between the value and the nGram (in its original and reversed order)
+                                                distance = Levenshtein.ratio(valueToCompare.lower(), compare.lower())
+                                                backwardDistance = Levenshtein.ratio(valueToCompare.lower(), backwardCompare.lower())
+
+                                                # We keep the best distance score; note that the Levenshtein distance is normalized so that greater is better
+                                                if backwardDistance > distance:
+                                                    distance = backwardDistance
+                                                if (distance > 0.3):
+                                                    observedValueAlignments[value].add((gram, distance))
+
+                while observedValueAlignments.keys():
+                    # Find the best aligned nGram
+                    max = -1000
+                    bestValue = False
+                    bestGram = False
+
+                    toRemove = set()
+                    for value in observedValueAlignments.keys():
+                        if observedValueAlignments[value]:
+                            for gram, distance in observedValueAlignments[value]:
+                                if distance > max:
+                                    max = distance
+                                    bestValue = value
+                                    bestGram = gram
+                        else:
+                            toRemove.add(value)
+                    for value in toRemove:
+                        del observedValueAlignments[value]
+
+                    if bestGram:
+                        # Find the subphrase that corresponds to the best aligned nGram
+                        bestGramPos = self.find_subList_in_actionList(bestGram, directReferenceSequence)
+                        if bestGramPos:
+                            for i in range(bestGramPos[0], bestGramPos[1] + 1):
+                                directReferenceSequence[i].attribute = valueToAttr[bestValue]
+                            if forTrain:
+                                # Store the best aligned nGram
+                                if bestValue not in self.valueAlignments.keys():
+                                    self.valueAlignments[bestValue] = {}
+                                self.valueAlignments[bestValue][bestGram] = max
+                            # And remove it from the observed ones for this instance
+                            del observedValueAlignments[bestValue]
+                        else:
+                            observedValueAlignments[value].remove((bestGram, max))
+                for action in directReferenceSequence:
+                    if action.word.startswith(Action.TOKEN_X):
+                        action.attribute = action.word[3:action.word.find('_')]
+            DI = DatasetInstance(MR, directReferenceSequence, self.postProcessRef(MR, directReferenceSequence))
+            instances[self.singlePredicate].append(DI)
+
+    def loadTrainingLists(self):
+        print("Attempting to load training data...")
+        self.predicates = False
+        self.attributes = False
+        self.valueAlignments = False
+        self.trainingInstances = False
+        self.maxWordSequenceLength = False
+
+        if os.path.isfile('../cache/predicates_' + self.dataset + '.pickle'):
+            with open('../cache/predicates_' + self.dataset + '.pickle', 'rb') as handle:
+                self.predicates = pickle.load(handle)
+        if os.path.isfile('../cache/attributes_' + self.dataset + '.pickle'):
+            with open('../cache/attributes_' + self.dataset + '.pickle', 'rb') as handle:
+                self.attributes = pickle.load(handle)
+        if os.path.isfile('../cache/valueAlignments_' + self.dataset + '.pickle'):
+            with open('../cache/valueAlignments_' + self.dataset + '.pickle', 'rb') as handle:
+                self.valueAlignments = pickle.load(handle)
+        if os.path.isfile('../cache/trainingInstances_' + self.dataset + '.pickle'):
+            with open('../cache/trainingInstances_' + self.dataset + '.pickle', 'rb') as handle:
+                self.trainingInstances = pickle.load(handle)
+        if os.path.isfile('../cache/maxWordSequenceLength_' + self.dataset + '.pickle'):
+            with open('../cache/maxWordSequenceLength_' + self.dataset + '.pickle', 'rb') as handle:
+                self.maxWordSequenceLength = pickle.load(handle)
+
+        if self.predicates and self.attributes and self.valueAlignments and self.trainingInstances and self.maxWordSequenceLength:
+            return True
+        return False
+
+    def loadDevelopmentLists(self):
+        print("Attempting to load development data...")
+        self.developmentInstances = False
+
+        if os.path.isfile('../cache/developmentInstances_' + self.dataset + '.pickle'):
+            with open('../cache/developmentInstances_' + self.dataset + '.pickle', 'rb') as handle:
+                self.developmentInstances = pickle.load(handle)
+
+        if self.developmentInstances:
+            return True
+        return False
+
+    def loadTestingLists(self):
+        print("Attempting to load testing data...")
+        self.testingInstances = False
+
+        if os.path.isfile('../cache/testingInstances_' + self.dataset + '.pickle'):
+            with open('../cache/testingInstances_' + self.dataset + '.pickle', 'rb') as handle:
+                self.testingInstances = pickle.load(handle)
+
+        if self.testingInstances:
+            return True
+        return False
+            
+    def writeTrainingLists(self):
+        print("Writing training data...")
+        with open('../cache/predicates_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.predicates, handle)
+        with open('../cache/attributes_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.attributes, handle)
+        with open('../cache/valueAlignments_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.valueAlignments, handle)
+        with open('../cache/trainingInstances_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.trainingInstances, handle)
+        with open('../cache/maxWordSequenceLength_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.maxWordSequenceLength, handle)
+
+    def writeDevelopmentLists(self):
+        print("Writing development data...")
+        with open('../cache/developmentInstances_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.developmentInstances, handle)
+
+    def writeTestingLists(self):
+        print("Writing testing data...")
+        with open('../cache/testingInstances_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.testingInstances, handle)
+
+    @staticmethod
+    def postProcessRef(mr, refSeq):
         cleanedWords = ""
         for nlWord in refSeq:
             if nlWord.word != Action.TOKEN_END and nlWord.word != Action.TOKEN_START and nlWord.word != Action.TOKEN_PUNCT:
@@ -198,6 +392,13 @@ class DatasetParser(object):
             cleanedWords += " ."
         return cleanedWords.strip()
 
+    @staticmethod
+    def find_subList_in_actionList(sl, l):
+        sll = len(sl)
+        for ind in (i for i, e in enumerate(l) if e.word == sl[0].word):
+            if [o.word for o in l[ind:ind + sll]] == [r.word for r in sl]:
+                return ind, ind + sll - 1
+
 
 if __name__ == '__main__':
-    parser = DatasetParser("trainset.csv")
+    parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E')

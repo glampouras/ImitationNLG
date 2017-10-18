@@ -44,7 +44,7 @@ class MeaningRepresentation(object):
                 sortedValues = sorted(self.attributeValues.get(attr))
                 for value in sortedValues:
                     if attr == "name" or attr == "near":
-                        self.abstractMR += Action.TOKEN_X + attr + "_" + xCounts[attr] + ","
+                        self.abstractMR += Action.TOKEN_X + attr + "_" + str(xCounts[attr]) + ","
                         xCounts[attr] = xCounts[attr] + 1
                     else:
                         self.abstractMR += value + ","
