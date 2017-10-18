@@ -21,6 +21,9 @@ class DatasetInstance(object):
         self.evaluationReferences = set()
         self.evaluationReferences.add(directReference)
 
+        self.evaluationReferenceSequences = set()
+        self.evaluationReferences.add(directReferenceSequence)
+
         # A reference for the word actions of the DatasetInstance; this is constructed using the reference directly
         # corresponding to this instance in the dataset and not processed further
         # Primarily used as a cache for the reference, to be used in "cache baselines"

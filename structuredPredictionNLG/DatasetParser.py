@@ -3,11 +3,13 @@ from Action import Action
 from MeaningRepresentation import MeaningRepresentation
 from DatasetInstance import DatasetInstance
 from SimpleContentPredictor import SimpleContentPredictor
+from WordPredictor import getExpertPolicyWordAction
 import os.path
 import re
 import Levenshtein
 import _pickle as pickle
 from nltk.util import ngrams
+from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
 '''
  This is a general specification of a DatasetParser.
@@ -39,10 +41,13 @@ class DatasetParser(object):
             for predicate in self.trainingInstances:
                 for di in self.trainingInstances[predicate]:
                     refs = set()
+                    refSeqs = set()
                     for di2 in self.trainingInstances[predicate]:
                         if di != di2 and di2.MR.MRstr == di.MR.MRstr:
                             refs.add(di2.directReference)
+                            refSeqs.add(di2.directReferenceSequence)
                     di.evaluationReferences = refs
+                    di.evaluationReferenceSequences = refSeqs
             self.writeTrainingLists()
         if (reset or not self.loadDevelopmentLists()) and developmentFile:
             self.developmentInstances = {}
@@ -79,13 +84,30 @@ class DatasetParser(object):
         '''
 
         # Example of training and using the SimpleContentPredictor
+        '''
+        avgBLEU = 0.0
         self.contentPredictor = SimpleContentPredictor(self.dataset, self.attributes, self.trainingInstances)
         for di in self.developmentInstances[self.singlePredicate]:
             print(di.MR.MRstr)
             print(di.MR.attributeValues)
-            print(di.getDirectReferenceAttrValueSequence())
-            print(self.contentPredictor.rollContentSequence_withLearnedPolicy(di))
+            refCont = [o.attribute for o in di.getDirectReferenceAttrValueSequence()]
+            genCont = self.contentPredictor.rollContentSequence_withLearnedPolicy(di)
+            BLEU = sentence_bleu([refCont], genCont)
+            print(refCont)
+            print(genCont)
+            print(BLEU)
             print()
+
+            avgBLEU += BLEU
+        avgBLEU /= len(self.developmentInstances[self.singlePredicate])
+        print('==========')
+        print(avgBLEU)
+        '''
+
+        # Example of using the expert policy for word prediction
+        di = self.developmentInstances[self.singlePredicate][0]
+        sequence = []
+        print(getExpertPolicyWordAction(sequence, di))
 
     def createLists(self, dataFile, instances, forTrain = False):
         print("Create lists from ", dataFile, "...")
