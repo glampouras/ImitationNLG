@@ -217,6 +217,7 @@ class DatasetParser(object):
             for r, word in enumerate(observedWordSequence):
                 directReferenceSequence.append(Action(word, wordToAttrValueAlignment[r]))
 
+            alingedAttributes = set()
             if directReferenceSequence:
                 # Align subphrases of the sentence to attribute values
                 observedValueAlignments = {}
@@ -227,7 +228,11 @@ class DatasetParser(object):
                         if not value.startswith(Action.TOKEN_X):
                             observedValueAlignments[value] = set()
                             valueToAttr[value] = attr
-                            valuesToCompare = [value, attr]
+                            valuesToCompare = set()
+                            valuesToCompare.update([value, attr])
+                            valuesToCompare.update(value.split(" "))
+                            valuesToCompare.update(attr.split(" "))
+                            valuesToCompare.update(attr.split("_"))
                             for valueToCompare in valuesToCompare:
                                 # obtain n-grams from the sentence
                                 for n in range(1, 6):
@@ -235,7 +240,7 @@ class DatasetParser(object):
 
                                     # calculate the similarities between each gram and valueToCompare
                                     for gram in grams:
-                                        if Action.TOKEN_X not in gram and Action.TOKEN_PUNCT not in gram:
+                                        if Action.TOKEN_X not in [o.label for o in gram].__str__() and Action.TOKEN_PUNCT not in [o.attribute for o in gram]:
                                             compare = " ".join(o.label for o in gram)
                                             backwardCompare = " ".join(o.label for o in reversed(gram))
 
@@ -253,8 +258,7 @@ class DatasetParser(object):
                 while observedValueAlignments.keys():
                     # Find the best aligned nGram
                     max = -1000
-                    bestValue = False
-                    bestGram = False
+                    bestGrams = {}
 
                     toRemove = set()
                     for value in observedValueAlignments.keys():
@@ -262,12 +266,37 @@ class DatasetParser(object):
                             for gram, distance in observedValueAlignments[value]:
                                 if distance > max:
                                     max = distance
-                                    bestValue = value
-                                    bestGram = gram
+                                    bestGrams = {}
+                                if distance == max:
+                                    bestGrams[gram] = value
                         else:
                             toRemove.add(value)
                     for value in toRemove:
                         del observedValueAlignments[value]
+
+                    # Going with the earliest occurance of a matched ngram works best when aligning with hard alignments
+                    # Because all the other match ngrams that occur to the left of the earliest, will probably be aligned as well
+                    minOccurance = len(directReferenceSequence)
+                    bestGram = False
+                    bestValue = False
+                    for gram in bestGrams:
+                        occur = self.find_subList_in_actionList(gram, directReferenceSequence)[0]
+                        if occur < minOccurance:
+                            minOccurance = occur
+                            bestGram = gram
+                            bestValue = bestGrams[gram]
+
+                    # Otherwise might be better to go for the longest ngram
+                    '''
+                    maxLen = 0
+                    bestGram = False
+                    bestValue = False
+                    for gram in bestGrams:
+                        if len(gram) > maxLen:
+                            maxLen = distance
+                            bestGram = gram
+                            bestValue = bestGrams[gram]
+                    '''
 
                     if bestGram:
                         # Find the subphrase that corresponds to the best aligned nGram
@@ -275,6 +304,7 @@ class DatasetParser(object):
                         if bestGramPos:
                             for i in range(bestGramPos[0], bestGramPos[1] + 1):
                                 directReferenceSequence[i].attribute = valueToAttr[bestValue]
+                                alingedAttributes.add(directReferenceSequence[i].attribute)
                             if forTrain:
                                 # Store the best aligned nGram
                                 if bestValue not in self.valueAlignments.keys():
@@ -287,10 +317,15 @@ class DatasetParser(object):
                 for action in directReferenceSequence:
                     if action.label.startswith(Action.TOKEN_X):
                         action.attribute = action.label[3:action.label.find('_')]
+                        alingedAttributes.add(action.attribute)
 
-            directReferenceSequence = inferNaiveAlignments(directReferenceSequence)
-            DI = DatasetInstance(MR, directReferenceSequence, self.postProcessRef(MR, directReferenceSequence))
-            instances[self.singlePredicate].append(DI)
+
+            # If not all attributes are aligned, ignore the instance from training?
+            # Alternatively, we could align them randomly; certainly not ideal, but usually it concerns edge cases
+            if MR.attributeValues.keys() == alingedAttributes or not forTrain:
+                directReferenceSequence = inferNaiveAlignments(directReferenceSequence)
+                DI = DatasetInstance(MR, directReferenceSequence, self.postProcessRef(MR, directReferenceSequence))
+                instances[self.singlePredicate].append(DI)
 
     def loadTrainingLists(self):
         print("Attempting to load training data...")
@@ -389,57 +424,66 @@ class DatasetParser(object):
                 return ind, ind + sll - 1
 
 
-def inferNaiveAlignments(sequence):
+def inferNaiveAlignments(sequence, useHardAlignments=True):
     attrSeq = [o.attribute for o in sequence]
-    while True:
-        changes = {}
-        for i, attr in enumerate(attrSeq):
-            if attr != "[]" and attr != Action.TOKEN_PUNCT:
-                if i - 1 >= 0 and attrSeq[i - 1] == "[]":
-                    if attr not in changes:
-                        changes[attr] = set()
-                    changes[attr].add(i - 1)
-                if i + 1 < len(attrSeq) and attrSeq[i + 1] == "[]":
-                    if attr not in changes:
-                        changes[attr] = set()
-                    changes[attr].add(i + 1)
-        for attr in changes:
-            for index in changes[attr]:
-                attrSeq[index] = attr
-                sequence[index].attribute = attr
-        if not changes:
-            break
-    while "[]" in attrSeq:
-        print(attrSeq)
-        index = attrSeq.index("[]")
-        copyFrom = index - 1
-        while copyFrom >= 0:
-            if attrSeq[copyFrom] != "[]" and attrSeq[copyFrom] != Action.TOKEN_PUNCT:
-                attrSeq[index] = attrSeq[copyFrom]
-                sequence[index].attribute = attrSeq[copyFrom]
-                copyFrom = -1
-            else:
-                copyFrom -= 1
-        if attrSeq[index] == "[]":
-            copyFrom = index + 1
-            while copyFrom < len(attrSeq):
+    if useHardAlignments:
+        currentAttr = ""
+        for act in sequence:
+            if (act.attribute == "[]" or act.attribute == Action.TOKEN_PUNCT) and currentAttr != "":
+                act.attribute = currentAttr
+            currentAttr = act.attribute
+
+        currentAttr = ""
+        for act in reversed(sequence):
+            if (act.attribute == "[]" or act.attribute == Action.TOKEN_PUNCT) and currentAttr != "":
+                act.attribute = currentAttr
+            currentAttr = act.attribute
+    else:
+        while True:
+            changes = {}
+            for i, attr in enumerate(attrSeq):
+                if attr != "[]" and attr != Action.TOKEN_PUNCT:
+                    if i - 1 >= 0 and attrSeq[i - 1] == "[]":
+                        if attr not in changes:
+                            changes[attr] = set()
+                        changes[attr].add(i - 1)
+                    if i + 1 < len(attrSeq) and attrSeq[i + 1] == "[]":
+                        if attr not in changes:
+                            changes[attr] = set()
+                        changes[attr].add(i + 1)
+            for attr in changes:
+                for index in changes[attr]:
+                    attrSeq[index] = attr
+                    sequence[index].attribute = attr
+            if not changes:
+                break
+        while "[]" in attrSeq:
+            index = attrSeq.index("[]")
+            copyFrom = index - 1
+            while copyFrom >= 0:
                 if attrSeq[copyFrom] != "[]" and attrSeq[copyFrom] != Action.TOKEN_PUNCT:
                     attrSeq[index] = attrSeq[copyFrom]
                     sequence[index].attribute = attrSeq[copyFrom]
-                    copyFrom = len(attrSeq)
+                    copyFrom = -1
                 else:
-                    copyFrom += 1
-    if"[]" in attrSeq:
-        print(attrSeq)
-        exit()
-    while Action.TOKEN_PUNCT in attrSeq:
-        index = attrSeq.index(Action.TOKEN_PUNCT)
-        if index > 0:
-            attrSeq[index] = attrSeq[index - 1]
-            sequence[index].attribute = attrSeq[index - 1]
-        else:
-            attrSeq[index] = attrSeq[index + 1]
-            sequence[index].attribute = attrSeq[index + 1]
+                    copyFrom -= 1
+            if attrSeq[index] == "[]":
+                copyFrom = index + 1
+                while copyFrom < len(attrSeq):
+                    if attrSeq[copyFrom] != "[]" and attrSeq[copyFrom] != Action.TOKEN_PUNCT:
+                        attrSeq[index] = attrSeq[copyFrom]
+                        sequence[index].attribute = attrSeq[copyFrom]
+                        copyFrom = len(attrSeq)
+                    else:
+                        copyFrom += 1
+        while Action.TOKEN_PUNCT in attrSeq:
+            index = attrSeq.index(Action.TOKEN_PUNCT)
+            if index > 0:
+                attrSeq[index] = attrSeq[index - 1]
+                sequence[index].attribute = attrSeq[index - 1]
+            else:
+                attrSeq[index] = attrSeq[index + 1]
+                sequence[index].attribute = attrSeq[index + 1]
     currentAttr = ""
     for i, act in enumerate(sequence):
         if act.attribute != currentAttr:

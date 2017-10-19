@@ -66,6 +66,7 @@ class ImitationLearner(object):
         return self.stateToPrediction(state)
 
     def stateToPrediction(self, state):
+        print(state.actionsTaken)
         for act in state.actionsTaken:
             if act.label in state.datasetInstance.input.delexicalizationMap:
                 act.label = state.datasetInstance.input.delexicalizationMap[act.label]
