@@ -1,28 +1,23 @@
 # Gerasimos Lampouras, 2017:
 from Action import Action
 from copy import copy
+import imitation
+from nltk.translate.bleu_score import sentence_bleu
 
 '''
- This is an abstract specification of a DatasetParser.
+ This represents a single instance in the dataset. 
 '''
-class DatasetInstance(object):
+class DatasetInstance(imitation.StructuredInstance):
 
     def __init__(self, MR, directReferenceSequence, directReference):
-        # The meaning representation
-        self.MR = MR
+        self.input = MR
+        self.output = NLGOutput()
 
         # A reference for the word actions of the DatasetInstance; this is constructed using the reference directly
         # corresponding to this instance in the dataset
         self.setDirectReferenceSequence(directReferenceSequence)
         # Realized string of the word actions in the direct reference
         self.directReference = directReference
-
-        # References to be used during evaluation of this DatasetInstance
-        self.evaluationReferences = set()
-        self.evaluationReferences.add(directReference)
-
-        self.evaluationReferenceSequences = set()
-        self.evaluationReferences.add(directReferenceSequence)
 
         # A reference for the word actions of the DatasetInstance; this is constructed using the reference directly
         # corresponding to this instance in the dataset and not processed further
@@ -41,14 +36,15 @@ class DatasetInstance(object):
      Clone constructor.
      @param other DatasetInstance whose values will be used to instantiate this object
     '''
-    def copy(self, other):
-        self.MR = copy.copy(other.MR)
+    def __deepcopy__(self, other):
+        self.input = copy.copy(other.input)
+        self.output = NLGOutput()
 
         self.setDirectReferenceSequence(copy.copy(other.directReferenceSequence))
         self.directReference = copy.copy(other.directReference)
 
-        self.evaluationReferences = set()
-        self.evaluationReferences.add(copy.copy(other.directReference))
+        self.output.evaluationReferences = set()
+        self.output.evaluationReferences.add(copy.copy(other.directReference))
 
     '''
      Returns (and constructs when first called) a sequence of content actions
@@ -61,12 +57,12 @@ class DatasetInstance(object):
             previousAttr = ""
             for act in self.directReferenceSequence:
                 if act.attribute != previousAttr:
-                    if act.attribute != Action.TOKEN_END and act.attribute != Action.TOKEN_PUNCT and act.attribute != '[]':
-                        self.directAttrSequence.append(Action(Action.TOKEN_START, act.attribute))
+                    if act.attribute != Action.TOKEN_EOS and act.attribute != Action.TOKEN_PUNCT and act.attribute != '[]':
+                        self.directAttrSequence.append(Action(Action.TOKEN_SHIFT, act.attribute))
                     elif act.attribute == '[]' and act.word.startswith(Action.TOKEN_X):
-                        self.directAttrSequence.append(Action(Action.TOKEN_START, act.word[3:act.word.find('_')]))
-                    elif act.attribute == Action.TOKEN_END:
-                        self.directAttrSequence.append(Action(Action.TOKEN_END, act.attribute))
+                        self.directAttrSequence.append(Action(Action.TOKEN_SHIFT, act.word[3:act.word.find('_')]))
+                    elif act.attribute == Action.TOKEN_EOS:
+                        self.directAttrSequence.append(Action(Action.TOKEN_EOS, act.attribute))
                 if act.attribute != Action.TOKEN_PUNCT:
                     previousAttr = act.attribute
         return self.directAttrSequence
@@ -85,10 +81,10 @@ class DatasetInstance(object):
                 previousAttr = ""
                 for act in evaluationReferenceSequence:
                     if act.attribute != previousAttr:
-                        if act.attribute != Action.TOKEN_END:
-                            evaluationAttrSequence.append(Action(Action.TOKEN_START, act.attribute))
+                        if act.attribute != Action.TOKEN_EOS:
+                            evaluationAttrSequence.append(Action(Action.TOKEN_SHIFT, act.attribute))
                         else:
-                            evaluationAttrSequence.append(Action(Action.TOKEN_END, act.attribute))
+                            evaluationAttrSequence.append(Action(Action.TOKEN_EOS, act.attribute))
                     if act.attribute != Action.TOKEN_PUNCT:
                         previousAttr = act.attribute
                 self.evaluationAttrSequences.append(evaluationAttrSequence)
@@ -106,9 +102,49 @@ class DatasetInstance(object):
         previousAttr = ""
         for act in directReferenceSequence:
             if act.attribute != previousAttr:
-                if act.attribute != Action.TOKEN_END:
-                    self.directAttrSequence.append(Action(Action.TOKEN_START, act.attribute))
+                if act.attribute != Action.TOKEN_EOS:
+                    self.directAttrSequence.append(Action(Action.TOKEN_SHIFT, act.attribute))
                 else:
-                    self.directAttrSequence.append(Action(Action.TOKEN_END, act.attribute))
+                    self.directAttrSequence.append(Action(Action.TOKEN_EOS, act.attribute))
             if act.attribute != Action.TOKEN_PUNCT:
                 previousAttr = act.attribute
+
+class NLGOutput(imitation.StructuredOutput):
+    def __init__(self):
+        # References to be used during evaluation of this DatasetInstance
+        self.evaluationReferences = set()
+        self.evaluationReferenceSequences = []
+
+    # it must return an evalStats object with a loss
+    def compareAgainst(self, predicted):
+        evalStats = NLGEvalStats()
+
+        maxBLEU = 0.0
+        for ref in self.evaluationReferenceSequences:
+            bleuOriginal = sentence_bleu([ref], predicted)
+            if bleuOriginal > maxBLEU:
+                maxBLEU = bleuOriginal
+
+            # todo resolve issues with Rouge library, add it to cost metric
+            '''
+            maxROUGE = 0.0;
+            for ref in refs:
+                scores = rouge.get_scores(ref.lower(), gen.lower())
+                print(scores)
+                exit()
+                if bleuOriginal > maxROUGE:
+                    maxROUGE = bleuOriginal
+            return (maxBLEU + maxROUGE) / 2.0
+            '''
+        evalStats.BLEU = maxBLEU
+        evalStats.loss = 1.0 - maxBLEU
+        return evalStats
+
+
+# Then the NER eval stats
+class NLGEvalStats(imitation.EvalStats):
+    def __init__(self):
+        super().__init__()
+        self.BLEU = 0
+        self.ROUGE = 0
+        self.coverage = 0

@@ -3,13 +3,13 @@ from Action import Action
 from MeaningRepresentation import MeaningRepresentation
 from DatasetInstance import DatasetInstance
 from SimpleContentPredictor import SimpleContentPredictor
-from WordPredictor import getExpertPolicyWordAction
+from NLGState import NLGState
+import imitation
 import os.path
 import re
 import Levenshtein
 import _pickle as pickle
 from nltk.util import ngrams
-from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
 '''
  This is a general specification of a DatasetParser.
@@ -18,11 +18,9 @@ from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 '''
 class DatasetParser(object):
 
-    def __init__(self, trainingFile, developmentFile, testingFile, datasetID):
+    def __init__(self, trainingFile, developmentFile, testingFile, datasetID, reset = False):
         self.singlePredicate = 'inform'
         self.dataset = datasetID
-
-        reset = True
 
         if (reset or not self.loadTrainingLists()) and trainingFile:
             self.predicates = []
@@ -41,13 +39,15 @@ class DatasetParser(object):
             for predicate in self.trainingInstances:
                 for di in self.trainingInstances[predicate]:
                     refs = set()
-                    refSeqs = set()
+                    refs.add(di.directReference)
+                    refSeqs = [[o.label.lower() for o in di.directReferenceSequence if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]]
                     for di2 in self.trainingInstances[predicate]:
-                        if di != di2 and di2.MR.MRstr == di.MR.MRstr:
+                        if di != di2 and di2.input.MRstr == di.input.MRstr:
                             refs.add(di2.directReference)
-                            refSeqs.add(di2.directReferenceSequence)
-                    di.evaluationReferences = refs
-                    di.evaluationReferenceSequences = refSeqs
+                            if di2.directReferenceSequence not in refSeqs:
+                                refSeqs.append(o.label.lower() for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS)
+                    di.output.evaluationReferences = refs
+                    di.output.evaluationReferenceSequences = refSeqs
             self.writeTrainingLists()
         if (reset or not self.loadDevelopmentLists()) and developmentFile:
             self.developmentInstances = {}
@@ -58,11 +58,11 @@ class DatasetParser(object):
             # Create the evaluation refs for DEV data, as described in https://github.com/tuetschek/e2e-metrics/tree/master/example-inputs
             for predicate in self.developmentInstances:
                 for di in self.developmentInstances[predicate]:
-                    refs = set()
+                    refs = set(di.directReference)
                     for di2 in self.developmentInstances[predicate]:
-                        if di != di2 and di2.MR.MRstr == di.MR.MRstr:
+                        if di != di2 and di2.input.MRstr == di.input.MRstr:
                             refs.add(di2.directReference)
-                    di.evaluationReferences = refs
+                    di.output.evaluationReferences = refs
             self.writeDevelopmentLists()
         if (reset or not self.loadTestingLists()) and testingFile:
             self.testingInstances = {}
@@ -70,44 +70,6 @@ class DatasetParser(object):
 
             self.createLists(testingFile, self.testingInstances, False)
             self.writeTestingLists()
-
-        # Test that loading was correct
-        '''
-        print(len(self.trainingInstances))
-        for di in self.trainingInstances[self.singlePredicate]:
-            print(di.MR.MRstr)
-            print(di.MR.attributeValues)
-            print(di.MR.delexicalizationMap)
-            print(di.getDirectReferenceAttrValueSequence())
-            print(di.directReferenceSequence)
-            print()
-        '''
-
-        # Example of training and using the SimpleContentPredictor
-        '''
-        avgBLEU = 0.0
-        self.contentPredictor = SimpleContentPredictor(self.dataset, self.attributes, self.trainingInstances)
-        for di in self.developmentInstances[self.singlePredicate]:
-            print(di.MR.MRstr)
-            print(di.MR.attributeValues)
-            refCont = [o.attribute for o in di.getDirectReferenceAttrValueSequence()]
-            genCont = self.contentPredictor.rollContentSequence_withLearnedPolicy(di)
-            BLEU = sentence_bleu([refCont], genCont)
-            print(refCont)
-            print(genCont)
-            print(BLEU)
-            print()
-
-            avgBLEU += BLEU
-        avgBLEU /= len(self.developmentInstances[self.singlePredicate])
-        print('==========')
-        print(avgBLEU)
-        '''
-
-        # Example of using the expert policy for word prediction
-        di = self.developmentInstances[self.singlePredicate][0]
-        sequence = []
-        print(getExpertPolicyWordAction(sequence, di))
 
     def createLists(self, dataFile, instances, forTrain = False):
         print("Create lists from ", dataFile, "...")
@@ -135,6 +97,9 @@ class DatasetParser(object):
             else:
                 MRPart = line
                 refPart = ""
+
+            if refPart.startswith("\"") and refPart.endswith("\""):
+                refPart = refPart[1:-1]
 
             if MRPart.startswith("\""):
                 MRPart = MRPart[1:]
@@ -271,8 +236,8 @@ class DatasetParser(object):
                                     # calculate the similarities between each gram and valueToCompare
                                     for gram in grams:
                                         if Action.TOKEN_X not in gram and Action.TOKEN_PUNCT not in gram:
-                                            compare = " ".join(o.word for o in gram)
-                                            backwardCompare = " ".join(o.word for o in reversed(gram))
+                                            compare = " ".join(o.label for o in gram)
+                                            backwardCompare = " ".join(o.label for o in reversed(gram))
 
                                             if compare.strip():
                                                 # Calculate the character-level distance between the value and the nGram (in its original and reversed order)
@@ -318,10 +283,12 @@ class DatasetParser(object):
                             # And remove it from the observed ones for this instance
                             del observedValueAlignments[bestValue]
                         else:
-                            observedValueAlignments[value].remove((bestGram, max))
+                            observedValueAlignments[bestValue].remove((bestGram, max))
                 for action in directReferenceSequence:
-                    if action.word.startswith(Action.TOKEN_X):
-                        action.attribute = action.word[3:action.word.find('_')]
+                    if action.label.startswith(Action.TOKEN_X):
+                        action.attribute = action.label[3:action.label.find('_')]
+
+            directReferenceSequence = inferNaiveAlignments(directReferenceSequence)
             DI = DatasetInstance(MR, directReferenceSequence, self.postProcessRef(MR, directReferenceSequence))
             instances[self.singlePredicate].append(DI)
 
@@ -404,11 +371,11 @@ class DatasetParser(object):
     def postProcessRef(mr, refSeq):
         cleanedWords = ""
         for nlWord in refSeq:
-            if nlWord.word != Action.TOKEN_END and nlWord.word != Action.TOKEN_START and nlWord.word != Action.TOKEN_PUNCT:
-                if nlWord.word.startswith(Action.TOKEN_X):
-                    cleanedWords += " " + mr.delexicalizationMap[nlWord.word]
+            if nlWord.label != Action.TOKEN_EOS and nlWord.label != Action.TOKEN_SHIFT and nlWord.label != Action.TOKEN_PUNCT:
+                if nlWord.label.startswith(Action.TOKEN_X):
+                    cleanedWords += " " + mr.delexicalizationMap[nlWord.label]
                 else:
-                    cleanedWords += " " + nlWord.word
+                    cleanedWords += " " + nlWord.label
         cleanedWords = cleanedWords.strip()
         if not cleanedWords.endswith("."):
             cleanedWords += " ."
@@ -417,10 +384,113 @@ class DatasetParser(object):
     @staticmethod
     def find_subList_in_actionList(sl, l):
         sll = len(sl)
-        for ind in (i for i, e in enumerate(l) if e.word == sl[0].word):
-            if [o.word for o in l[ind:ind + sll]] == [r.word for r in sl]:
+        for ind in (i for i, e in enumerate(l) if e.label == sl[0].label):
+            if [o.label for o in l[ind:ind + sll]] == [r.label for r in sl]:
                 return ind, ind + sll - 1
 
 
+def inferNaiveAlignments(sequence):
+    attrSeq = [o.attribute for o in sequence]
+    while True:
+        changes = {}
+        for i, attr in enumerate(attrSeq):
+            if attr != "[]" and attr != Action.TOKEN_PUNCT:
+                if i - 1 >= 0 and attrSeq[i - 1] == "[]":
+                    if attr not in changes:
+                        changes[attr] = set()
+                    changes[attr].add(i - 1)
+                if i + 1 < len(attrSeq) and attrSeq[i + 1] == "[]":
+                    if attr not in changes:
+                        changes[attr] = set()
+                    changes[attr].add(i + 1)
+        for attr in changes:
+            for index in changes[attr]:
+                attrSeq[index] = attr
+                sequence[index].attribute = attr
+        if not changes:
+            break
+    while "[]" in attrSeq:
+        index = attrSeq.index("[]")
+        copyFrom = index - 1
+        while copyFrom >= 0:
+            if attrSeq[copyFrom] != "[]" and attrSeq[copyFrom] != Action.TOKEN_PUNCT:
+                attrSeq[index] = attrSeq[copyFrom]
+                sequence[index].attribute = attrSeq[copyFrom]
+                copyFrom = -1
+            else:
+                copyFrom -= 1
+        if attrSeq[index] == "[]":
+            copyFrom = index + 1
+            while copyFrom < len(attrSeq):
+                if attrSeq[copyFrom] != "[]" and attrSeq[copyFrom] != Action.TOKEN_PUNCT:
+                    attrSeq[index] = attrSeq[copyFrom]
+                    sequence[index].attribute = attrSeq[copyFrom]
+                    copyFrom = len(attrSeq)
+                else:
+                    copyFrom += 1
+    if"[]" in attrSeq:
+        print(attrSeq)
+        exit()
+    while Action.TOKEN_PUNCT in attrSeq:
+        index = attrSeq.index(Action.TOKEN_PUNCT)
+        if index > 0:
+            attrSeq[index] = attrSeq[index - 1]
+            sequence[index].attribute = attrSeq[index - 1]
+        else:
+            attrSeq[index] = attrSeq[index + 1]
+            sequence[index].attribute = attrSeq[index + 1]
+    currentAttr = ""
+    for i, act in enumerate(sequence):
+        if act.attribute != currentAttr:
+            sequence.insert(i, Action(Action.TOKEN_SHIFT, act.attribute))
+            currentAttr = act.attribute
+    sequence.append(Action(Action.TOKEN_EOS, Action.TOKEN_EOS))
+    return sequence
+
+
 if __name__ == '__main__':
-    parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E')
+    # load the training data!
+    # parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E', True)
+    parser = DatasetParser(r'../toyData/toy_trainset.csv', r'../toyData/toy_devset.csv', False, 'toy_E2E', True)
+
+    # Test that loading was correct
+    '''
+    print(len(parser.trainingInstances))
+    for di in parser.trainingInstances[parser.singlePredicate]:
+        print(di.input.MRstr)
+        print(di.input.attributeValues)
+        print(di.input.delexicalizationMap)
+        print(di.getDirectReferenceAttrValueSequence())
+        print(di.directReferenceSequence)
+        print()
+    '''
+
+    # Example of training and using the SimpleContentPredictor
+    '''
+    # avgBLEU = 0.0
+    contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
+    for di in parser.developmentInstances[parser.singlePredicate]:
+        print(di.input.MRstr)
+        print(di.input.attributeValues)
+        print(di.directReference)
+        refCont = [o.attribute for o in di.getDirectReferenceAttrValueSequence()]
+        genCont = contentPredictor.rollContentSequence_withLearnedPolicy(di)
+        # BLEU = sentence_bleu([refCont], genCont)
+        print(refCont)
+        print(genCont)
+        # print(BLEU)
+        print()
+
+        # avgBLEU += BLEU
+    # avgBLEU /= len(self.developmentInstances[self.singlePredicate])
+    # print('==========')
+    # print(avgBLEU)
+    '''
+
+    # Example of using the expert policy for word prediction
+    contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
+    initialState = NLGState(contentPredictor, parser.trainingInstances[parser.singlePredicate][0])
+
+    learner = imitation.ImitationLearner()
+    learner.predict(parser.trainingInstances[parser.singlePredicate][0], initialState, 1.0)
+

@@ -49,7 +49,7 @@ class SimpleContentPredictor(object):
         if not contentSequence:
             contentSequence = []
 
-        attrs = set(datasetInstance.MR.attributeValues.keys())
+        attrs = set(datasetInstance.input.attributeValues.keys())
         for attr in contentSequence:
             attrs.remove(attr)
         permutations = itertools.permutations(attrs)
@@ -57,7 +57,7 @@ class SimpleContentPredictor(object):
         bestPermut = False
         max = -1
         for permut in permutations:
-            prob = self.getLMProbability(datasetInstance.MR.predicate, list(permut), 1.0)
+            prob = self.getLMProbability(datasetInstance.input.predicate, list(permut), 1.0)
             if prob > max:
                 max = prob
                 bestPermut = permut
@@ -77,7 +77,7 @@ class SimpleContentPredictor(object):
             refList = refSeq.sequence[:]
 
             if len(rollOutList) < len(refList):
-                if currentAttr == Action.TOKEN_END:
+                if currentAttr == Action.TOKEN_EOS:
                     while len(rollOutList) == len(refList):
                         rollOutList.append(Action("££", "££"))
                 else:
@@ -94,7 +94,7 @@ class SimpleContentPredictor(object):
             totalAttrValuesInRef = 0;
             attrValuesInRefAndNotInRollIn = 0;
             for attrValueAct in refList:
-                if attrValueAct.attribute != Action.TOKEN_END:
+                if attrValueAct.attribute != Action.TOKEN_EOS:
                     totalAttrValuesInRef += 1
 
                     containsAttrValue = False

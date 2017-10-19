@@ -1,11 +1,12 @@
 # Gerasimos Lampouras, 2017:
 from Action import Action
 from collections import defaultdict
+import imitation
 
 '''
  Internal representation of a Meaning Representation
 '''
-class MeaningRepresentation(object):
+class MeaningRepresentation(imitation.StructuredInput):
 
     def __init__(self, predicate, attributeValues, MRstr, delexicalizationMap=False):
         # A MeaningRepresentation consists of a predicate, and a map of attributes to sets of values
