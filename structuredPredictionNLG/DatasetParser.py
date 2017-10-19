@@ -332,12 +332,16 @@ class DatasetParser(object):
 
     def loadTrainingLists(self):
         print("Attempting to load training data...")
+        self.vocabulary = False
         self.predicates = False
         self.attributes = False
         self.valueAlignments = False
         self.trainingInstances = False
         self.maxWordSequenceLength = False
 
+        if os.path.isfile('../cache/vocabulary_' + self.dataset + '.pickle'):
+            with open('../cache/vocabulary_' + self.dataset + '.pickle', 'rb') as handle:
+                self.vocabulary = pickle.load(handle)
         if os.path.isfile('../cache/predicates_' + self.dataset + '.pickle'):
             with open('../cache/predicates_' + self.dataset + '.pickle', 'rb') as handle:
                 self.predicates = pickle.load(handle)
@@ -354,7 +358,7 @@ class DatasetParser(object):
             with open('../cache/maxWordSequenceLength_' + self.dataset + '.pickle', 'rb') as handle:
                 self.maxWordSequenceLength = pickle.load(handle)
 
-        if self.predicates and self.attributes and self.valueAlignments and self.trainingInstances and self.maxWordSequenceLength:
+        if self.vocabulary and self.predicates and self.attributes and self.valueAlignments and self.trainingInstances and self.maxWordSequenceLength:
             return True
         return False
 
@@ -384,6 +388,8 @@ class DatasetParser(object):
             
     def writeTrainingLists(self):
         print("Writing training data...")
+        with open('../cache/vocabulary_' + self.dataset + '.pickle', 'wb') as handle:
+            pickle.dump(self.vocabulary, handle)
         with open('../cache/predicates_' + self.dataset + '.pickle', 'wb') as handle:
             pickle.dump(self.predicates, handle)
         with open('../cache/attributes_' + self.dataset + '.pickle', 'wb') as handle:
