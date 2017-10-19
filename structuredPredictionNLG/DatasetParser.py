@@ -27,6 +27,7 @@ class DatasetParser(object):
             self.attributes = {}
             self.valueAlignments = {}
             self.trainingInstances = {}
+            self.vocabulary = set()
 
             self.attributes[self.singlePredicate] = set()
             self.trainingInstances[self.singlePredicate] = []
@@ -216,6 +217,8 @@ class DatasetParser(object):
             directReferenceSequence = []
             for r, word in enumerate(observedWordSequence):
                 directReferenceSequence.append(Action(word, wordToAttrValueAlignment[r]))
+                if forTrain:
+                    self.vocabulary.add(word)
 
             alingedAttributes = set()
             if directReferenceSequence:
@@ -500,6 +503,7 @@ if __name__ == '__main__':
 
     # Test that loading was correct
     '''
+    print(parser.vocabulary)
     print(len(parser.trainingInstances))
     for di in parser.trainingInstances[parser.singlePredicate]:
         print(di.input.MRstr)
