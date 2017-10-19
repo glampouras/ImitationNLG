@@ -1,4 +1,3 @@
-
 from .state import State
 
 from sklearn.linear_model import SGDClassifier
@@ -13,10 +12,10 @@ class ImitationLearner(object):
     # this is to be specified by the class that inherits this.
     stateType = None
 
-    def __init__(self):
-        self.model = SGDClassifier(average=True)
-        self.vectorizer = DictVectorizer()
-        self.labelEncoder = LabelEncoder()
+    def __init__(self, model, word2index, index2word):
+        self.model = model
+        self.word2index = word2index
+        self.index2word = index2word
 
     # this function predicts an instance given the state
     # state keeps track the various actions taken
@@ -39,18 +38,19 @@ class ImitationLearner(object):
         # if we do not have any actions we are done
         while len(state.agenda) > 0:
             # the first condition is to avoid un-necessary calls to random which give me reproducibility headaches
+            input_word, hidden_state = state.getRNNFeatures()
+            index = self.word2index[input_word.label]
+            action_costs, new_state = self.model.predict(index, hidden_state)
             if (optimalPolicyProb == 1.0) or (optimalPolicyProb > 0.0 and random.random() < optimalPolicyProb):
                 current_action = state.optimalPolicy(structuredInstance)
             else:
-                # predict (probably makes sense to parallelize across instances)
-                # vectorize the features:
-                vectorized_features = self.vectorizer.transform(current_action.features)
-                # predict using the model
-                normalized_label = self.model.predict(vectorized_features)
-                # get the actual label (returns an array, get the first and only element)
-                current_action.label = self.stage.inverse_transform(normalized_label)[0]
+                # Take the model prediction
+                label = action_costs.data.numpy().argmax()
+                current_action = Action(self.index2word[label], state.agenda[0][0])
             # add the action to the state making any necessary updates
-            state.updateWithAction(current_action, structuredInstance)
+            # TODO(kc391): update with the hidden state too - also if the action
+            # came from the expert policy, update the hidden state
+            state.updateWithAction(current_action, new_state, structuredInstance)
 
         # OK return the instance-levelprediction
         # Not sure where this functions belongs. Feels like the state, but then one needs to have a
@@ -85,7 +85,7 @@ class ImitationLearner(object):
             # set the optimal policy prob
             optimalPolicyProb = pow(1-params.learningParam, iteration)
             print("Iteration:"+ str(iteration) + ", optimal policy prob:"+ str(optimalPolicyProb))
-            
+
             for structuredInstance in structuredInstances:
 
                 state = self.stateType()
@@ -95,7 +95,7 @@ class ImitationLearner(object):
 
                 # how good is the current policy compared to the gold?
                 #structuredInstance.output.compareAgainst(newOutput)
-                
+
                 stateCopy = self.stateType()
                 # for each action in every stage taken in predicting the output
                 for stageNo, stage in enumerate(state.currentStages):
@@ -118,7 +118,7 @@ class ImitationLearner(object):
                         stateCopy.currentStages[stateCopy.currentStageNo].agenda.popleft()
                         stateCopy.updateWithAction(action, structuredInstance)
 
-            # OK, let's save the training data and learn some classifiers            
+            # OK, let's save the training data and learn some classifiers
             for stageNo, stageInfo in enumerate(self.stages):
                 print("training for stage:" + str(stageNo))
                 # vectorize the training data collected
@@ -150,4 +150,4 @@ class ImitationLearner(object):
     # TODO
     #def load(self, modelFileName):
     #    self.model.load(modelFileName + "/model_model")
-            
+
