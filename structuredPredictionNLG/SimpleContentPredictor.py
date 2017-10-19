@@ -63,7 +63,7 @@ class SimpleContentPredictor(object):
                 bestPermut = permut
 
         seq = contentSequence[:]
-        seq.extend(bestPermut)
+        seq.extend([(attr, datasetInstance.input.attributeValues[attr]) for attr in bestPermut])
         return seq
 
     '''

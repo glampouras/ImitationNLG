@@ -38,17 +38,9 @@ class ImitationLearner(object):
         # predict all remainins actions
         # if we do not have any actions we are done
         while len(state.agenda) > 0:
-            # for each action
-            # pop it from the queue
-            current_action = state.agenda[0]
-            # extract features and add them to the action
-            # (even for the optimal policy, it doesn't need the features but they are needed later on)
-            # todo this should not be commented out, but we havent implemented it yet (probably useless)
-            # current_action.features = state.extractFeatures(state, structuredInstance, current_action)
-
             # the first condition is to avoid un-necessary calls to random which give me reproducibility headaches
             if (optimalPolicyProb == 1.0) or (optimalPolicyProb > 0.0 and random.random() < optimalPolicyProb):
-                current_action = state.optimalPolicy(structuredInstance, current_action)
+                current_action = state.optimalPolicy(structuredInstance)
             else:
                 # predict (probably makes sense to parallelize across instances)
                 # vectorize the features:
@@ -66,7 +58,8 @@ class ImitationLearner(object):
         return self.stateToPrediction(state)
 
     def stateToPrediction(self, state):
-        print(state.actionsTaken)
+        # Uncomment to print state as an action list, before it is converted to a string
+        # print(state.actionsTaken)
         for act in state.actionsTaken:
             if act.label in state.datasetInstance.input.delexicalizationMap:
                 act.label = state.datasetInstance.input.delexicalizationMap[act.label]

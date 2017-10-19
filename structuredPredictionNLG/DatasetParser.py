@@ -41,13 +41,16 @@ class DatasetParser(object):
                     refs = set()
                     refs.add(di.directReference)
                     refSeqs = [[o.label.lower() for o in di.directReferenceSequence if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]]
+                    refActionSeqs = [[o for o in di.directReferenceSequence if o.label != Action.TOKEN_SHIFT]]
                     for di2 in self.trainingInstances[predicate]:
                         if di != di2 and di2.input.MRstr == di.input.MRstr:
                             refs.add(di2.directReference)
                             if di2.directReferenceSequence not in refSeqs:
                                 refSeqs.append(o.label.lower() for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS)
+                                refActionSeqs.append([o for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT])
                     di.output.evaluationReferences = refs
                     di.output.evaluationReferenceSequences = refSeqs
+                    di.output.evaluationReferenceActionSequences = refActionSeqs
             self.writeTrainingLists()
         if (reset or not self.loadDevelopmentLists()) and developmentFile:
             self.developmentInstances = {}
@@ -132,10 +135,7 @@ class DatasetParser(object):
                 if attribute:
                     if forTrain:
                         self.attributes[self.singlePredicate].add(attribute)
-                    if attribute not in attributeValues:
-                        attributeValues[attribute] = set()
-                    if value:
-                        attributeValues[attribute].add(value)
+                    attributeValues[attribute] = value
 
             for deValue in delexicalizedMap.keys():
                 value = delexicalizedMap[deValue]

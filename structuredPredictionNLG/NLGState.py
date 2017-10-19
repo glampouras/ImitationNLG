@@ -17,7 +17,7 @@ class NLGState(imitation.State):
         self.datasetInstance = datasetInstance
 
         # Shift first attribute
-        self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0]))
+        self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
         '''
         if isinstance(sequence, self.__class__):
             copySeq = sequence.actionsTaken
@@ -38,48 +38,55 @@ class NLGState(imitation.State):
         pass
 
     # todo make this work from any timestep
-    def optimalPolicy(self, structuredInstance, currentAction):
+    def optimalPolicy(self, structuredInstance, currentAction=False):
         availableWords = set()
         seqLen = len([o for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS])
         isSeqLongerThanAllRefs = True
-        for indirectRef in self.datasetInstance.output.evaluationReferenceSequences:
+        for indirectRef in self.datasetInstance.output.evaluationReferenceActionSequences:
             if seqLen < len(indirectRef):
                 isSeqLongerThanAllRefs = False
-            for label in indirectRef:
-                availableWords.add(label)
-        availableWords.add(Action.TOKEN_EOS)
+            for action in indirectRef:
+                availableWords.add(action.label)
         costVector = defaultdict(lambda: 1.0)
 
         # If the sequence is longer than all the available references, it has gone on too far and should stop
         if isSeqLongerThanAllRefs:
             costVector[Action.TOKEN_EOS] = 0.0
         else:
-            for word in availableWords:
-                # Do not repeat the same word twice in a row
-                if not self.actionsTaken or word != self.actionsTaken[-1].label.lower():
-                    rollInAdd = [o.label.lower() for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]
-                    rollInAdd.append(word)
-                    if word == Action.TOKEN_EOS:
-                        rollOutSeq = rollInAdd[:]
-                        refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
-                        if refCost.loss < costVector[word]:
-                            costVector[word] = refCost.loss
-                    else:
-                        for ref in self.datasetInstance.output.evaluationReferenceSequences:
-                            for i in range(0, len(ref)):
-                                rollOutSeq = rollInAdd[:]
-                                rollOutSeq.extend(ref[i:])
+            rollIn = [o.label.lower() for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]
+            for ref in self.datasetInstance.output.evaluationReferenceActionSequences:
+                for i in range(0, len(ref)):
+                    # Do not repeat the same word twice in a row
+                    if not self.actionsTaken or ref[i].label != self.actionsTaken[-1].label.lower():
+                        if ref[i].label == Action.TOKEN_EOS:
+                            rollOutSeq = rollIn[:]
+                            refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
+                            if refCost.loss < costVector[Action.TOKEN_EOS]:
+                                costVector[Action.TOKEN_EOS] = refCost.loss
+                        else:
+                            rollOutSeq = rollIn[:]
+                            rollOutSeq.extend([o.label for o in ref[i:]])
 
-                                refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
-                                if refCost.loss < costVector[word]:
-                                    costVector[word] = refCost.loss
+                            refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
+                            if ref[i].attribute == self.agenda[0][0]:
+                                if refCost.loss < costVector[ref[i].label]:
+                                    costVector[ref[i].label] = refCost.loss
+                            else:
+                                if refCost.loss < costVector[Action.TOKEN_SHIFT]:
+                                    costVector[Action.TOKEN_SHIFT] = refCost.loss
 
         minCost = min(costVector.values())
         if minCost != 0.0:
             for word in costVector:
                 costVector[word] = costVector[word] - minCost
         bestLabel = set([act for act in costVector if costVector[act] == 0.0]).pop()
-        return Action(bestLabel, self.agenda[0])
+
+        if bestLabel == Action.TOKEN_SHIFT:
+            if len(self.agenda) == 1:
+                return Action(Action.TOKEN_EOS, Action.TOKEN_EOS)
+            else:
+                return Action(Action.TOKEN_SHIFT, self.agenda[1][0])
+        return Action(bestLabel, self.agenda[0][0])
 
     def updateWithAction(self, action, structuredInstance):
         self.actionsTaken.append(action)

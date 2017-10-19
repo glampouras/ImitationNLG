@@ -114,6 +114,7 @@ class NLGOutput(imitation.StructuredOutput):
         # References to be used during evaluation of this DatasetInstance
         self.evaluationReferences = set()
         self.evaluationReferenceSequences = []
+        self.evaluationReferenceActionSequences = []
 
     # it must return an evalStats object with a loss
     def compareAgainst(self, predicted):
