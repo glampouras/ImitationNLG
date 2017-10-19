@@ -4,6 +4,7 @@ from .state import State
 from sklearn.linear_model import SGDClassifier
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.preprocessing import LabelEncoder
+from structuredPredictionNLG.Action import Action
 
 import random
 
@@ -65,7 +66,10 @@ class ImitationLearner(object):
         return self.stateToPrediction(state)
 
     def stateToPrediction(self, state):
-        pass
+        for act in state.actionsTaken:
+            if act.label in state.datasetInstance.input.delexicalizationMap:
+                act.label = state.datasetInstance.input.delexicalizationMap[act.label]
+        return (" ".join([o.label for o in state.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS])).strip()
 
     class params(object):
         def __init__(self):

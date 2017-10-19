@@ -410,6 +410,7 @@ def inferNaiveAlignments(sequence):
         if not changes:
             break
     while "[]" in attrSeq:
+        print(attrSeq)
         index = attrSeq.index("[]")
         copyFrom = index - 1
         while copyFrom >= 0:
@@ -492,5 +493,6 @@ if __name__ == '__main__':
     initialState = NLGState(contentPredictor, parser.trainingInstances[parser.singlePredicate][0])
 
     learner = imitation.ImitationLearner()
-    learner.predict(parser.trainingInstances[parser.singlePredicate][0], initialState, 1.0)
+    output = learner.predict(parser.trainingInstances[parser.singlePredicate][0], initialState, 1.0)
+    print(output)
 

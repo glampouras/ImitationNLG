@@ -43,21 +43,27 @@ class NLGState(imitation.State):
         for indirectRef in self.datasetInstance.output.evaluationReferenceSequences:
             for label in indirectRef:
                 availableWords.add(label)
-
+        availableWords.add(Action.TOKEN_EOS)
         costVector = defaultdict(lambda: 1.0)
         for word in availableWords:
             # Do not repeat the same word twice in a row
             if not self.actionsTaken or word != self.actionsTaken[-1].label.lower():
-                for ref in self.datasetInstance.output.evaluationReferenceSequences:
-                    rollInAdd = [o.label.lower() for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]
-                    rollInAdd.append(word)
-                    for i in range(0, len(ref)):
-                        rollOutSeq = rollInAdd[:]
-                        rollOutSeq.extend(ref[i:])
+                rollInAdd = [o.label.lower() for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]
+                rollInAdd.append(word)
+                if word == Action.TOKEN_EOS:
+                    rollOutSeq = rollInAdd[:]
+                    refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
+                    if refCost.loss < costVector[word]:
+                        costVector[word] = refCost.loss
+                else:
+                    for ref in self.datasetInstance.output.evaluationReferenceSequences:
+                        for i in range(0, len(ref)):
+                            rollOutSeq = rollInAdd[:]
+                            rollOutSeq.extend(ref[i:])
 
-                        refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
-                        if refCost.loss < costVector[word]:
-                            costVector[word] = refCost.loss
+                            refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
+                            if refCost.loss < costVector[word]:
+                                costVector[word] = refCost.loss
 
         minCost = min(costVector.values())
         for word in costVector:
@@ -69,6 +75,8 @@ class NLGState(imitation.State):
         self.actionsTaken.append(action)
         if action.label == Action.TOKEN_SHIFT:
             self.agenda.popleft()
+        if action.label == Action.TOKEN_EOS:
+            self.agenda = deque([])
 
 
     '''
