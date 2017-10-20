@@ -3,6 +3,8 @@ from Action import Action
 import imitation
 from collections import deque
 from collections import defaultdict
+import torch
+from torch.autograd import Variable
 
 '''
  Each NLGState consists of an ArrayList of Actions.
@@ -13,16 +15,24 @@ class NLGState(imitation.State):
 
     def __init__(self, contentPredictor, datasetInstance):
         self.actionsTaken = []
+        self.tokensProduced = []
+        self.RNNState = []
         self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
         self.datasetInstance = datasetInstance
 
         # Shift first attribute
         # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
+        # Add a @go@ symbol to initialise decoding
+        self.tokensProduced.append(Action(Action.TOKEN_GO, self.agenda[0][0]))
+        # TODO: where to put this?
+        self.RNNState.append(
+            (Variable(torch.zeros(1, 100)),
+             Variable(torch.zeros(1, 100))))
         '''
         if isinstance(sequence, self.__class__):
             copySeq = sequence.actionsTaken
         else:
-            copySeq = sequence        
+            copySeq = sequence
 
         for action in copySeq:
             # @cleanEndTokens: Whether or not Action.TOKEN_SHIFT and Action.TOKEN_EOS actions should be omitted.
@@ -37,6 +47,9 @@ class NLGState(imitation.State):
     def extractFeatures(self, mrl, action):
         pass
 
+    def getRNNFeatures(self):
+        return self.tokensProduced[-1], self.RNNState[-1]
+
     # todo make this work from any timestep
     def optimalPolicy(self, structuredInstance, currentAction=False):
         availableWords = set()
@@ -47,7 +60,6 @@ class NLGState(imitation.State):
                 isSeqLongerThanAllRefs = False
             for action in indirectRef:
                 availableWords.add(action.label)
-
         costVector = defaultdict(lambda: 1.0)
 
         # If the sequence is longer than all the available references, it has gone on too far and should stop
@@ -94,12 +106,15 @@ class NLGState(imitation.State):
         bestLabel = bestActions.pop()
         return Action(bestLabel, self.agenda[0][0])
 
-    def updateWithAction(self, action, structuredInstance):
+    def updateWithAction(self, action, new_state, structuredInstance):
         self.actionsTaken.append(action)
         if action.label == Action.TOKEN_SHIFT:
             self.agenda.popleft()
-        if action.label == Action.TOKEN_EOS:
+        elif action.label == Action.TOKEN_EOS:
             self.agenda = deque([])
+        else:
+            self.tokensProduced.append(action)
+        self.RNNState.append(new_state)
 
 
     '''
@@ -123,7 +138,7 @@ class NLGState(imitation.State):
                 w += action.label + " "
         return w.strip()
 
-    '''    
+    '''
      Returns a string representation of the word actions in the NLGState, while omitting all punctuation.
     '''
     def getWordSequenceToString_NoPunct(self):
@@ -142,7 +157,7 @@ class NLGState(imitation.State):
             w += action.attribute + " "
         return w.strip()
 
-    '''   
+    '''
      Returns the length of the sequence when not accounting for Action.TOKEN_SHIFT and Action.TOKEN_EOS actions.
     '''
     def getLength_NoBorderTokens(self):
@@ -152,8 +167,8 @@ class NLGState(imitation.State):
                 length += 1
         return length
 
-    '''    
-     Returns the length of the sequence when not accounting for Action.TOKEN_SHIFT and Action.TOKEN_EOS actions, 
+    '''
+     Returns the length of the sequence when not accounting for Action.TOKEN_SHIFT and Action.TOKEN_EOS actions,
      and punctuation.
     '''
     def getLength_NoBorderTokens_NoPunct(self):

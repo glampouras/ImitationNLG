@@ -4,6 +4,7 @@ from MeaningRepresentation import MeaningRepresentation
 from DatasetInstance import DatasetInstance
 from SimpleContentPredictor import SimpleContentPredictor
 from NLGState import NLGState
+from RNNWordPredictor import RNNWordPredictor
 import imitation
 import os.path
 import re
@@ -385,7 +386,7 @@ class DatasetParser(object):
         if self.testingInstances:
             return True
         return False
-            
+
     def writeTrainingLists(self):
         print("Writing training data...")
         with open('../cache/vocabulary_' + self.dataset + '.pickle', 'wb') as handle:
@@ -545,8 +546,13 @@ if __name__ == '__main__':
     # Example of using the expert policy for word prediction
     contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
     initialState = NLGState(contentPredictor, parser.trainingInstances[parser.singlePredicate][0])
+    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
+    parser.vocabulary.add('@go@')
+    parser.vocabulary.add('@shift@')
+    parser.vocabulary.add('@eos@')
+    index2word = list(parser.vocabulary)
+    word2index = {word: i for i, word in enumerate(index2word)}
 
-    learner = imitation.ImitationLearner()
-    output = learner.predict(parser.trainingInstances[parser.singlePredicate][0], initialState, 1.0)
+    learner = imitation.ImitationLearner(wordPredictor, word2index, index2word)
+    output = learner.predict(parser.trainingInstances[parser.singlePredicate][0], initialState, 0.5)
     print(output)
-

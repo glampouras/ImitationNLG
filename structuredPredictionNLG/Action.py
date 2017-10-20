@@ -16,6 +16,8 @@ class Action(object):
     # Default action identifier for variable occurrences in an NLGState.
     # This is usually combined with an attribute identifier and an index integer to distinguish between variables.
     TOKEN_X = "@x@"
+    # Default action identifier to start decoding
+    TOKEN_GO = "@go@"
 
     def __init__(self, word, attribute):
         # Main components of an action
@@ -24,7 +26,7 @@ class Action(object):
         self.label = word
         self.attribute = attribute
 
-    '''    
+    '''
      Clone constructor.
      @param a Action whose values will be used to instantiate this object.
     '''
