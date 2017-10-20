@@ -17,7 +17,7 @@ class NLGState(imitation.State):
         self.datasetInstance = datasetInstance
 
         # Shift first attribute
-        self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
+        # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
         '''
         if isinstance(sequence, self.__class__):
             copySeq = sequence.actionsTaken
@@ -47,6 +47,7 @@ class NLGState(imitation.State):
                 isSeqLongerThanAllRefs = False
             for action in indirectRef:
                 availableWords.add(action.label)
+
         costVector = defaultdict(lambda: 1.0)
 
         # If the sequence is longer than all the available references, it has gone on too far and should stop
@@ -65,8 +66,10 @@ class NLGState(imitation.State):
                                 costVector[Action.TOKEN_EOS] = refCost.loss
                         else:
                             rollOutSeq = rollIn[:]
-                            rollOutSeq.extend([o.label for o in ref[i:]])
-
+                            if ref[-1].label == Action.TOKEN_EOS:
+                                rollOutSeq.extend([o.label for o in ref[i:-1]])
+                            else:
+                                rollOutSeq.extend([o.label for o in ref[i:]])
                             refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
                             if ref[i].attribute == self.agenda[0][0]:
                                 if refCost.loss < costVector[ref[i].label]:
@@ -79,13 +82,16 @@ class NLGState(imitation.State):
         if minCost != 0.0:
             for word in costVector:
                 costVector[word] = costVector[word] - minCost
-        bestLabel = set([act for act in costVector if costVector[act] == 0.0]).pop()
+        bestActions = set([act for act in costVector if costVector[act] == 0.0])
 
-        if bestLabel == Action.TOKEN_SHIFT:
+        # This does allow subsequent SHIFT actions, with no words generated between them.
+        # It might encourage learning to produce no words for some attributes, let's keep that in mind.
+        if Action.TOKEN_EOS in bestActions and Action.TOKEN_SHIFT in bestActions:
             if len(self.agenda) == 1:
                 return Action(Action.TOKEN_EOS, Action.TOKEN_EOS)
             else:
                 return Action(Action.TOKEN_SHIFT, self.agenda[1][0])
+        bestLabel = bestActions.pop()
         return Action(bestLabel, self.agenda[0][0])
 
     def updateWithAction(self, action, structuredInstance):
