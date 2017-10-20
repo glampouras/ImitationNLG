@@ -13,15 +13,18 @@ from torch.autograd import Variable
 '''
 class NLGState(imitation.State):
 
-    def __init__(self, contentPredictor, datasetInstance):
+    def __init__(self, contentPredictor, datasetInstance, useExpertContent=False):
         self.actionsTaken = []
         self.tokensProduced = []
         self.RNNState = []
         self.actionProbsCache = []
         self.expertActions = []
         self.expertActionsTaken = []
-        self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
         self.datasetInstance = datasetInstance
+        if useExpertContent:
+            self.agenda = deque(self.optimalContentPolicy())
+        else:
+            self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
 
         # Shift first attribute
         # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
@@ -52,6 +55,10 @@ class NLGState(imitation.State):
 
     def getRNNFeatures(self):
         return self.tokensProduced[-1], self.RNNState[-1]
+
+    def optimalContentPolicy(self):
+        seq = [o.attribute for o in self.datasetInstance.directReferenceSequence if o.label == Action.TOKEN_SHIFT]
+        return list([(attr, self.datasetInstance.input.attributeValues[attr]) for attr in seq])
 
     # todo make this work from any timestep
     def optimalPolicy(self, structuredInstance, currentAction=False):
