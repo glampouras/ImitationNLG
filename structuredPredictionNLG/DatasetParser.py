@@ -48,8 +48,8 @@ class DatasetParser(object):
                         if di != di2 and di2.input.MRstr == di.input.MRstr:
                             refs.add(di2.directReference)
                             if di2.directReferenceSequence not in refSeqs:
-                                refSeqs.append(o.label.lower() for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS)
-                                refActionSeqs.append([o for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT])
+                                refSeqs.append(list(o.label.lower() for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS))
+                                refActionSeqs.append(list([o for o in di2.directReferenceSequence if o.label != Action.TOKEN_SHIFT]))
                     di.output.evaluationReferences = refs
                     di.output.evaluationReferenceSequences = refSeqs
                     di.output.evaluationReferenceActionSequences = refActionSeqs
