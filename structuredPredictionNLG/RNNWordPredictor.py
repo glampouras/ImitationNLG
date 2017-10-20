@@ -21,7 +21,7 @@ class RNNWordPredictorModel(nn.Module):
         self.lstm_cell = nn.LSTMCell(embedding_size, hidden_size)
         self.output_projection = nn.Linear(hidden_size, vocab_size)
 
-        self.softmax = nn.Softmax()
+        self.softmax = nn.LogSoftmax()
 
     def forward(self, input, state):
         '''
@@ -43,7 +43,7 @@ class RNNWordPredictorModel(nn.Module):
         # Calculate the log-likelihoods of the next action
         logits = self.output_projection(new_hidden)
 
-        return (logits, (new_hidden, new_cell))
+        return (self.softmax(logits), (new_hidden, new_cell))
 
 
 class RNNWordPredictor(object):
@@ -52,6 +52,7 @@ class RNNWordPredictor(object):
     def __init__(self, vocab_size, embed_size, hidden_size):
 
         self.model = RNNWordPredictorModel(vocab_size, embed_size, hidden_size)
+        self.loss = nn.NLLLoss()
 
         self.optimizer = torch.optim.Adam(self.model.parameters())
 
@@ -62,7 +63,7 @@ class RNNWordPredictor(object):
 
         return (log_probs, new_state)
 
-    def fit(self, training_data, encoded_labels):
+    def fit(self, action_costs, encoded_labels):
         # training_data: features to make a prediction
         # encoded_labels: what the correct prediction should be
 
@@ -75,14 +76,15 @@ class RNNWordPredictor(object):
 
         # It's fine if we assume structuredInstances is a batch of training data
 
-        predictions = []
-        for data, label in zip(training_data, encoded_labels):
-            # Work out what the model prediction is
-            prediction, _ = self.predict(data)
-            predictions.append(prediction)
+        loss = 0
+        counter = 0
+        self.optimizer.zero_grad()
+        for action_cost, label in zip(action_costs, encoded_labels):
+            loss += self.loss(action_cost, Variable(torch.LongTensor([label])))
+            counter += 1
 
-        # Calculate the cost of the prediction
-        loss = nn.CrossEntropyLoss()
-        cost = sum(map(loss, zip(predictions, encoded_labels)))
-
+        loss /= counter
         loss.backward()
+        self.optimizer.step()
+
+        return loss

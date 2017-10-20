@@ -17,6 +17,9 @@ class NLGState(imitation.State):
         self.actionsTaken = []
         self.tokensProduced = []
         self.RNNState = []
+        self.actionProbsCache = []
+        self.expertActions = []
+        self.expertActionsTaken = []
         self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
         self.datasetInstance = datasetInstance
 
@@ -101,7 +104,8 @@ class NLGState(imitation.State):
                 return Action(Action.TOKEN_SHIFT, self.agenda[1][0])
         return Action(bestLabel, self.agenda[0][0])
 
-    def updateWithAction(self, action, new_state, structuredInstance):
+    def updateWithAction(self, action, new_state, action_probs, expert_action,
+                         expert_action_taken, structuredInstance):
         self.actionsTaken.append(action)
         if action.label == Action.TOKEN_SHIFT:
             self.agenda.popleft()
@@ -110,6 +114,9 @@ class NLGState(imitation.State):
         else:
             self.tokensProduced.append(action)
         self.RNNState.append(new_state)
+        self.actionProbsCache.append(action_probs)
+        self.expertActions.append(expert_action)
+        self.expertActionsTaken.append(expert_action_taken)
 
 
     '''

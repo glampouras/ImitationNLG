@@ -9,13 +9,12 @@ import random
 
 class ImitationLearner(object):
 
-    # this is to be specified by the class that inherits this.
-    stateType = None
-
-    def __init__(self, model, word2index, index2word):
+    def __init__(self, model, content_model, word2index, index2word, stateType):
         self.model = model
+        self.content_model = content_model
         self.word2index = word2index
         self.index2word = index2word
+        self.stateType = stateType
 
     # this function predicts an instance given the state
     # state keeps track the various actions taken
@@ -37,25 +36,30 @@ class ImitationLearner(object):
         # predict all remainins actions
         # if we do not have any actions we are done
         while len(state.agenda) > 0:
-            # the first condition is to avoid un-necessary calls to random which give me reproducibility headaches
+            # update the RNN hidden state to take into account the previous
+            # action taken, regardless of whether it came from the expert or
+            # from the RNN
             input_word, hidden_state = state.getRNNFeatures()
             index = self.word2index[input_word.label]
-            action_costs, new_state = self.model.predict(index, hidden_state)
+            action_probs, new_state = self.model.predict(index, hidden_state)
+            # the first condition is to avoid un-necessary calls to random which give me reproducibility headaches
+            expert_action = state.optimalPolicy(structuredInstance)
+            import pdb
+            pdb.set_trace()
             if (optimalPolicyProb == 1.0) or (optimalPolicyProb > 0.0 and random.random() < optimalPolicyProb):
-                current_action = state.optimalPolicy(structuredInstance)
+                current_action = expert_action
+                expert_action_taken = True
             else:
                 # Take the model prediction
-                label = action_costs.data.numpy().argmax()
+                label = action_probs.data.numpy().argmax()
                 current_action = Action(self.index2word[label], state.agenda[0][0])
+                expert_action_taken = False
             # add the action to the state making any necessary updates
-            # TODO(kc391): update with the hidden state too - also if the action
-            # came from the expert policy, update the hidden state
-            state.updateWithAction(current_action, new_state, structuredInstance)
-
-        # OK return the instance-levelprediction
-        # Not sure where this functions belongs. Feels like the state, but then one needs to have a
-        # task-specific state. This is the only place needed...
-        return self.stateToPrediction(state)
+            # TODO(kc391): should probably cache the costs so we don't have to
+            # recalculate in train()
+            state.updateWithAction(current_action, new_state, action_probs,
+                                   expert_action, expert_action_taken,
+                                   structuredInstance)
 
     def stateToPrediction(self, state):
         # Uncomment to print state as an action list, before it is converted to a string
@@ -72,82 +76,27 @@ class ImitationLearner(object):
 
     #@profile
     # todo remove stages from train
-    def train(self, structuredInstances, modelFileName, params):
-        # for each stage create a dataset
-        stageNo2trainingFeatures = []
-        stageNo2trainingLabels = []
-        for stage in self.stages:
-            stageNo2trainingFeatures.append([])
-            stageNo2trainingLabels.append([])
-
+    def train(self, structuredInstances):
         # for each iteration
-        for iteration in range(params.iterations):
+        for iteration in range(10):
             # set the optimal policy prob
-            optimalPolicyProb = pow(1-params.learningParam, iteration)
+            optimalPolicyProb = pow(0.9, iteration)
             print("Iteration:"+ str(iteration) + ", optimal policy prob:"+ str(optimalPolicyProb))
 
             for structuredInstance in structuredInstances:
 
-                state = self.stateType()
+                state = self.stateType(self.content_model, structuredInstance)
                 # so we obtain the predicted output and the actions taken are in state
                 # this prediction uses the gold standard since we need this info for the optimal policy actions
-                newOutput = self.predict(structuredInstance, state, optimalPolicyProb)
+                prediction = self.predict(structuredInstance, state, optimalPolicyProb)
 
-                # how good is the current policy compared to the gold?
-                #structuredInstance.output.compareAgainst(newOutput)
-
-                stateCopy = self.stateType()
-                # for each action in every stage taken in predicting the output
-                for stageNo, stage in enumerate(state.currentStages):
-                    # Enter the new stage, starting from 0
-                    stateCopy.currentStageNo += 1
-                    new_stage = self.stages[stateCopy.currentStageNo](stateCopy, structuredInstance)
-                    stateCopy.currentStages.append(new_stage)
-                    for action in stage.actionsTaken:
-                        # DAgger just ask the expert
-                        expert_action = stage.optimalPolicy(stateCopy, structuredInstance, action)
-                        # if we wanted to have costs-to-go, we should assess all possible labels:
-                        #print("inside imitation learner")
-                        #print(stage.possibleLabels)
-
-                        # add the labeled features to the training data
-                        stageNo2trainingFeatures[stageNo].append(action.features)
-                        stageNo2trainingLabels[stageNo].append(expert_action)
-
-                         # take the original action chosen to proceed
-                        stateCopy.currentStages[stateCopy.currentStageNo].agenda.popleft()
-                        stateCopy.updateWithAction(action, structuredInstance)
-
-            # OK, let's save the training data and learn some classifiers
-            for stageNo, stageInfo in enumerate(self.stages):
-                print("training for stage:" + str(stageNo))
-                # vectorize the training data collected
-                training_data = self.stageNo2vectorizer[stageNo].fit_transform(stageNo2trainingFeatures[stageNo])
-                # encode the labels
-                encoded_labels = self.stageNo2labelEncoder[stageNo].fit_transform(stageNo2trainingLabels[stageNo])
-                # train
-                self.stageNo2model[stageNo].fit(training_data,encoded_labels)
-
-
-                # TODO save with scikit learn pickles, probably following this https://stackoverflow.com/questions/24152282/saving-a-feature-vector-for-new-data-in-scikit-learn
-                #if isinstance(stageInfo[1], str):
-                #    modelStageFileName = modelFileName + "_" + stageInfo[0].__name__ + ":" + stageInfo[1] + "_model"
-                #else:
-                #    modelStageFileName = modelFileName + "_" + stageInfo[0].__name__  + "_model"
-                #self.stageNo2model[stageNo].save(modelStageFileName)
-
-                # save the data:
-                #if isinstance(stageInfo[1], str):
-                #    dataFileName = modelFileName + "_" + stageInfo[0].__name__ + ":" + stageInfo[1] + "_data"
-                #else:
-                #    dataFileName = modelFileName + "_" + stageInfo[0].__name__  + "_data"
-
-                #dataFile = open(dataFileName, "w")
-                #for instance in stageNo2training[stageNo]:
-                #    dataFile.write(str(instance) + "\n")
-                #dataFile.close()
-
-    # TODO
-    #def load(self, modelFileName):
-    #    self.model.load(modelFileName + "/model_model")
-
+                # Convert expert actions to labels
+                labels = map(lambda x: self.word2index[x],
+                             [action.label for action in state.expertActions])
+                # see what the model predictions were and compare to the expert
+                loss = self.model.fit(state.actionProbsCache, labels)
+                print(loss)
+                print(self.stateToPrediction(state))
+                print(state.expertActions)
+                print(state.actionsTaken[1:])
+                print(state.expertActionsTaken)

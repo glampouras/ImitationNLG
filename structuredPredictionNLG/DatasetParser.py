@@ -544,15 +544,14 @@ if __name__ == '__main__':
     '''
 
     # Example of using the expert policy for word prediction
-    contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
-    initialState = NLGState(contentPredictor, parser.trainingInstances[parser.singlePredicate][0])
-    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
     parser.vocabulary.add('@go@')
     parser.vocabulary.add('@shift@')
     parser.vocabulary.add('@eos@')
-    index2word = list(parser.vocabulary)
+    index2word = sorted(list(parser.vocabulary))
     word2index = {word: i for i, word in enumerate(index2word)}
+    contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
+    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
 
-    learner = imitation.ImitationLearner(wordPredictor, word2index, index2word)
-    output = learner.predict(parser.trainingInstances[parser.singlePredicate][0], initialState, 0.5)
+    learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
+    output = learner.train(parser.trainingInstances[parser.singlePredicate])
     print(output)
