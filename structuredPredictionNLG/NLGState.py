@@ -1,6 +1,7 @@
 # Gerasimos Lampouras, 2017:
 from Action import Action
 import imitation
+import copy
 from collections import deque
 from collections import defaultdict
 import torch
@@ -21,19 +22,20 @@ class NLGState(imitation.State):
         self.expertActions = []
         self.expertActionsTaken = []
         self.datasetInstance = datasetInstance
-        if useExpertContent:
-            self.agenda = deque(self.optimalContentPolicy())
-        else:
-            self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
+        if datasetInstance:
+            if useExpertContent:
+                self.agenda = deque(self.optimalContentPolicy())
+            else:
+                self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
 
-        # Shift first attribute
-        # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
-        # Add a @go@ symbol to initialise decoding
-        self.tokensProduced.append(Action(Action.TOKEN_GO, self.agenda[0][0]))
-        # TODO: where to put this?
-        self.RNNState.append(
-            (Variable(torch.zeros(1, 100)),
-             Variable(torch.zeros(1, 100))))
+            # Shift first attribute
+            # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
+            # Add a @go@ symbol to initialise decoding
+            self.tokensProduced.append(Action(Action.TOKEN_GO, self.agenda[0][0]))
+            # TODO: where to put this?
+            self.RNNState.append(
+                (Variable(torch.zeros(1, 100)),
+                 Variable(torch.zeros(1, 100))))
         '''
         if isinstance(sequence, self.__class__):
             copySeq = sequence.actionsTaken
@@ -48,6 +50,20 @@ class NLGState(imitation.State):
                 self.actionsTaken.append(newAction)
         '''
 
+    '''
+     Clone constructor.
+     @param other NLGState whose values will be used to instantiate this object
+    '''
+    def clone(self, other):
+        self.actionsTaken = copy.deepcopy(other.actionsTaken)
+        self.tokensProduced = copy.deepcopy(other.tokensProduced)
+        self.RNNState = copy.copy(other.RNNState)
+        self.actionProbsCache = copy.copy(other.actionProbsCache)
+        self.expertActions = copy.deepcopy(other.expertActions)
+        self.expertActionsTaken = copy.deepcopy(other.expertActionsTaken)
+        self.datasetInstance = copy.deepcopy(other.datasetInstance)
+        self.agenda = copy.deepcopy(other.agenda)
+
     # extract features for current action in the agenda
     # probably not useful to us
     def extractFeatures(self, mrl, action):
@@ -60,8 +76,7 @@ class NLGState(imitation.State):
         seq = [o.attribute for o in self.datasetInstance.directReferenceSequence if o.label == Action.TOKEN_SHIFT]
         return list([(attr, self.datasetInstance.input.attributeValues[attr]) for attr in seq])
 
-    # todo make this work from any timestep
-    def optimalPolicy(self, structuredInstance, currentAction=False):
+    def optimalPolicy(self):
         availableWords = set()
         seqLen = len([o for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS])
         isSeqLongerThanAllRefs = True
@@ -93,10 +108,10 @@ class NLGState(imitation.State):
                             else:
                                 rollOutSeq.extend([o.label for o in ref[i:]])
                             refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
-                            if ref[i].attribute == self.agenda[0][0]:
-                                if refCost.loss < costVector[ref[i].label]:
-                                    costVector[ref[i].label] = refCost.loss
-                            else:
+
+                            if refCost.loss < costVector[ref[i].label]:
+                                costVector[ref[i].label] = refCost.loss
+                            if ref[i].attribute != self.agenda[0][0]:
                                 if refCost.loss < costVector[Action.TOKEN_SHIFT]:
                                     costVector[Action.TOKEN_SHIFT] = refCost.loss
 
@@ -104,17 +119,19 @@ class NLGState(imitation.State):
         if minCost != 0.0:
             for word in costVector:
                 costVector[word] = costVector[word] - minCost
-        bestActions = set([act for act in costVector if costVector[act] == 0.0])
+        bestLabels = set([act for act in costVector if costVector[act] == 0.0])
 
         # This does allow subsequent SHIFT actions, with no words generated between them.
         # It might encourage learning to produce no words for some attributes, let's keep that in mind.
-        if Action.TOKEN_EOS in bestActions and Action.TOKEN_SHIFT in bestActions:
+        if Action.TOKEN_EOS in bestLabels and Action.TOKEN_SHIFT in bestLabels:
             if len(self.agenda) == 1:
-                return Action(Action.TOKEN_EOS, Action.TOKEN_EOS)
+                return Action.TOKEN_EOS, costVector
             else:
-                return Action(Action.TOKEN_SHIFT, self.agenda[1][0])
-        bestLabel = bestActions.pop()
-        return Action(bestLabel, self.agenda[0][0])
+                return Action.TOKEN_SHIFT, costVector
+        if Action.TOKEN_SHIFT in bestLabels:
+            return Action.TOKEN_SHIFT, costVector
+        bestLabel = bestLabels.pop()
+        return bestLabel, costVector
 
     def updateWithAction(self, action, new_state, action_probs, expert_action,
                          expert_action_taken, structuredInstance):

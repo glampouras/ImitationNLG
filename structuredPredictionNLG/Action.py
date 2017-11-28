@@ -26,14 +26,6 @@ class Action(object):
         self.label = word
         self.attribute = attribute
 
-    '''
-     Clone constructor.
-     @param a Action whose values will be used to instantiate this object.
-    '''
-    def __deepcopy__(self, action):
-        self.label = copy.copy(action.label)
-        self.attribute = copy.copy(action.attribute)
-
     def __str__(self):
         return "A{" + self.label + "," + self.attribute + "}"
 

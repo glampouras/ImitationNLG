@@ -33,20 +33,6 @@ class DatasetInstance(imitation.StructuredInstance):
         self.evaluationAttrSequences = False
 
     '''
-     Clone constructor.
-     @param other DatasetInstance whose values will be used to instantiate this object
-    '''
-    def __deepcopy__(self, other):
-        self.input = copy.copy(other.input)
-        self.output = NLGOutput()
-
-        self.setDirectReferenceSequence(copy.copy(other.directReferenceSequence))
-        self.directReference = copy.copy(other.directReference)
-
-        self.output.evaluationReferences = set()
-        self.output.evaluationReferences.add(copy.copy(other.directReference))
-
-    '''
      Returns (and constructs when first called) a sequence of content actions
      based on the direct reference of this DatasetInstance.
      @return A sequence of content actions.
