@@ -95,12 +95,27 @@ class DatasetInstance(imitation.StructuredInstance):
             if act.attribute != Action.TOKEN_PUNCT:
                 previousAttr = act.attribute
 
+
+def cleanAndGetAttr(s):
+    if "¬" in s:
+        s = s[:s.find("¬")]
+    if "=" in s:
+        s = s[:s.find("=")]
+    return s
+
+
+def cleanAndGetValue(s):
+    if "=" in s:
+        return s[s.find("=") + 1:]
+    return ""
+
 class NLGOutput(imitation.StructuredOutput):
     def __init__(self):
         # References to be used during evaluation of this DatasetInstance
         self.evaluationReferences = set()
         self.evaluationReferenceSequences = []
         self.evaluationReferenceActionSequences = []
+        self.evaluationReferenceActionSequences_that_follow_agenda = []
 
     # it must return an evalStats object with a loss
     def compareAgainst(self, predicted):

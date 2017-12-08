@@ -4,6 +4,7 @@ from MeaningRepresentation import MeaningRepresentation
 from DatasetInstance import DatasetInstance
 from SimpleContentPredictor import SimpleContentPredictor
 from NLGState import NLGState
+from collections import Counter
 from RNNWordPredictor import RNNWordPredictor
 import imitation
 import os.path
@@ -32,8 +33,11 @@ class DatasetParser(object):
 
             self.attributes[self.singlePredicate] = set()
             self.trainingInstances[self.singlePredicate] = []
+            self.testingInstances = {}
+            self.developmentInstances = {}
 
             self.maxWordSequenceLength = 0
+            self.availableWordCounts = Counter()
 
             self.createLists(trainingFile, self.trainingInstances, True)
 
@@ -55,7 +59,6 @@ class DatasetParser(object):
                     di.output.evaluationReferenceActionSequences = refActionSeqs
             self.writeTrainingLists()
         if (reset or not self.loadDevelopmentLists()) and developmentFile:
-            self.developmentInstances = {}
             self.developmentInstances[self.singlePredicate] = []
 
             self.createLists(developmentFile, self.developmentInstances, False)
@@ -70,7 +73,6 @@ class DatasetParser(object):
                     di.output.evaluationReferences = refs
             self.writeDevelopmentLists()
         if (reset or not self.loadTestingLists()) and testingFile:
-            self.testingInstances = {}
             self.testingInstances[self.singlePredicate] = []
 
             self.createLists(testingFile, self.testingInstances, False)
@@ -114,6 +116,7 @@ class DatasetParser(object):
                 refPart = refPart[:-1]
             refPart = re.sub("([.,?:;!'-])", " \g<1> ", refPart)
             refPart = refPart.replace("\\?", " \\? ").replace("\\.", " \\.").replace(",", " , ").replace("  ", " ").strip()
+
             MRAttrValues = MRPart.split(",")
 
             # Map from original values to delexicalized values
@@ -227,37 +230,36 @@ class DatasetParser(object):
                 observedValueAlignments = {}
                 valueToAttr = {}
                 for attr in MR.attributeValues.keys():
-                    values = sorted(list(MR.attributeValues[attr]))
-                    for value in values:
-                        if not value.startswith(Action.TOKEN_X):
-                            observedValueAlignments[value] = set()
-                            valueToAttr[value] = attr
-                            valuesToCompare = set()
-                            valuesToCompare.update([value, attr])
-                            valuesToCompare.update(value.split(" "))
-                            valuesToCompare.update(attr.split(" "))
-                            valuesToCompare.update(attr.split("_"))
-                            for valueToCompare in valuesToCompare:
-                                # obtain n-grams from the sentence
-                                for n in range(1, 6):
-                                    grams = ngrams(directReferenceSequence, n)
+                    value = MR.attributeValues[attr]
+                    if not value.startswith(Action.TOKEN_X):
+                        observedValueAlignments[value] = set()
+                        valueToAttr[value] = attr
+                        valuesToCompare = set()
+                        valuesToCompare.update([value, attr])
+                        valuesToCompare.update(value.split(" "))
+                        valuesToCompare.update(attr.split(" "))
+                        valuesToCompare.update(attr.split("_"))
+                        for valueToCompare in valuesToCompare:
+                            # obtain n-grams from the sentence
+                            for n in range(1, 6):
+                                grams = ngrams(directReferenceSequence, n)
 
-                                    # calculate the similarities between each gram and valueToCompare
-                                    for gram in grams:
-                                        if Action.TOKEN_X not in [o.label for o in gram].__str__() and Action.TOKEN_PUNCT not in [o.attribute for o in gram]:
-                                            compare = " ".join(o.label for o in gram)
-                                            backwardCompare = " ".join(o.label for o in reversed(gram))
+                                # calculate the similarities between each gram and valueToCompare
+                                for gram in grams:
+                                    if Action.TOKEN_X not in [o.label for o in gram].__str__() and Action.TOKEN_PUNCT not in [o.attribute for o in gram]:
+                                        compare = " ".join(o.label for o in gram)
+                                        backwardCompare = " ".join(o.label for o in reversed(gram))
 
-                                            if compare.strip():
-                                                # Calculate the character-level distance between the value and the nGram (in its original and reversed order)
-                                                distance = Levenshtein.ratio(valueToCompare.lower(), compare.lower())
-                                                backwardDistance = Levenshtein.ratio(valueToCompare.lower(), backwardCompare.lower())
+                                        if compare.strip():
+                                            # Calculate the character-level distance between the value and the nGram (in its original and reversed order)
+                                            distance = Levenshtein.ratio(valueToCompare.lower(), compare.lower())
+                                            backwardDistance = Levenshtein.ratio(valueToCompare.lower(), backwardCompare.lower())
 
-                                                # We keep the best distance score; note that the Levenshtein distance is normalized so that greater is better
-                                                if backwardDistance > distance:
-                                                    distance = backwardDistance
-                                                if (distance > 0.3):
-                                                    observedValueAlignments[value].add((gram, distance))
+                                            # We keep the best distance score; note that the Levenshtein distance is normalized so that greater is better
+                                            if backwardDistance > distance:
+                                                distance = backwardDistance
+                                            if (distance > 0.3):
+                                                observedValueAlignments[value].add((gram, distance))
 
                 while observedValueAlignments.keys():
                     # Find the best aligned nGram
@@ -360,7 +362,9 @@ class DatasetParser(object):
                 self.maxWordSequenceLength = pickle.load(handle)
 
         if self.vocabulary and self.predicates and self.attributes and self.valueAlignments and self.trainingInstances and self.maxWordSequenceLength:
+            print("done!")
             return True
+        print("failed!")
         return False
 
     def loadDevelopmentLists(self):
@@ -372,7 +376,9 @@ class DatasetParser(object):
                 self.developmentInstances = pickle.load(handle)
 
         if self.developmentInstances:
+            print("done!")
             return True
+        print("failed!")
         return False
 
     def loadTestingLists(self):
@@ -384,7 +390,9 @@ class DatasetParser(object):
                 self.testingInstances = pickle.load(handle)
 
         if self.testingInstances:
+            print("done!")
             return True
+        print("failed!")
         return False
 
     def writeTrainingLists(self):
@@ -432,6 +440,67 @@ class DatasetParser(object):
         for ind in (i for i, e in enumerate(l) if e.label == sl[0].label):
             if [o.label for o in l[ind:ind + sll]] == [r.label for r in sl]:
                 return ind, ind + sll - 1
+
+    def initializeActionSpace(self):
+        self.availableWordCounts = Counter()
+        for datasetInstance in self.trainingInstances[self.singlePredicate]:
+            for a in datasetInstance.directReferenceSequence:
+                if a.label.strip() and a.label != Action.TOKEN_SHIFT:
+                    self.availableWordCounts[a.label] += 1
+
+    def trimTrainingSpace(self):
+        # Keep only unique training data
+        # Need to keep only one direct ref, we chose the one with 1) the most attrsvalues expressed, 2) most variables, and 3) the greatest avg. word freq
+        uniqueTrainingMRs = {}
+        for datasetInstance in self.trainingInstances[self.singlePredicate]:
+            if datasetInstance.input.MRstr not in uniqueTrainingMRs:
+                uniqueTrainingMRs[datasetInstance.input.MRstr] = []
+            uniqueTrainingMRs[datasetInstance.input.MRstr].append(datasetInstance)
+        uniqueTrainingInstances = []
+        for uniqueMR in uniqueTrainingMRs:
+            # keep the di whose direct reference's words have the greatest frequency
+            '''
+            bestDIs = set()
+            mostVars = 0;
+            for di in uniqueTrainingMRs[uniqueMR]:
+                vars = 0;
+                for a in di.directReferenceSequence:
+                    if a.label.startswith(Action.TOKEN_X):
+                        vars += 1
+                if vars > mostVars:
+                    mostVars = vars
+                    bestDIs = set()
+                if vars == mostVars:
+                    bestDIs.add(di)
+
+            if len(bestDIs) == 1:
+                for di in bestDIs:
+                    uniqueTrainingData.append(di)
+            else:
+            '''
+            bestDI = False
+            maxAvgFreq = 0.0
+            for datasetInstance in uniqueTrainingMRs[uniqueMR]:
+                avgFreq = 0.0
+                total = 0.0
+                for a in datasetInstance.directReferenceSequence:
+                    if a.label != Action.TOKEN_SHIFT:
+                        avgFreq += self.availableWordCounts[a.label]
+                        total += 1.0
+                if total != 0.0:
+                    avgFreq /= total
+                if avgFreq >= maxAvgFreq:
+                    maxAvgFreq = avgFreq
+                    bestDI = datasetInstance
+
+            if bestDI:
+                uniqueTrainingInstances.append(bestDI)
+            else:
+                print("Couldn't find appropriate DI")
+                print(uniqueMR)
+                print(uniqueTrainingMRs[uniqueMR])
+
+        self.trainingInstances[self.singlePredicate] = uniqueTrainingInstances
 
 
 def inferNaiveAlignments(sequence, useHardAlignments=True):
@@ -505,8 +574,20 @@ def inferNaiveAlignments(sequence, useHardAlignments=True):
 
 if __name__ == '__main__':
     # load the training data!
-    # parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E', True)
+    # parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E', False)
     parser = DatasetParser(r'../toyData/toy_trainset.csv', r'../toyData/toy_devset.csv', False, 'toy_E2E', True)
+
+    if parser.trainingInstances:
+        print("Training data size:", len(parser.trainingInstances[parser.singlePredicate]))
+    if parser.developmentInstances:
+        print("Validation data size:", len(parser.developmentInstances[parser.singlePredicate]))
+    if parser.testingInstances:
+        print("Test data size:", len(parser.testingInstances[parser.singlePredicate]))
+    print("-----------------------")
+
+    # Use these two calls to trim training instances down to a single reference
+    #parser.initializeActionSpace()
+    #parser.trimTrainingSpace()
 
     # Test that loading was correct
     '''
@@ -543,15 +624,34 @@ if __name__ == '__main__':
     # print(avgBLEU)
     '''
 
-    # Example of using the expert policy for word prediction
+    contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
     parser.vocabulary.add('@go@')
     parser.vocabulary.add('@shift@')
     parser.vocabulary.add('@eos@')
+    # Example of using the expert policy for word prediction
+
     index2word = sorted(list(parser.vocabulary))
     word2index = {word: i for i, word in enumerate(index2word)}
-    contentPredictor = SimpleContentPredictor(parser.dataset, parser.attributes, parser.trainingInstances)
+    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
+    learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
+
+    '''
+    for di in parser.trainingInstances[parser.singlePredicate]:
+        act = False
+        st = NLGState(contentPredictor, di, True)
+        while not act or act != Action.TOKEN_EOS:
+            # act, costVector = learner.optimalPolicy_rollOut(di, st)
+            act, costVector = st.optimalPolicy()
+            print(st.actionsTaken, act)
+            print(costVector)
+            st.updateWithAction(learner.convertLabelToAction(act, st), False, False, False, False, False)
+    print("----------------------------")
+    exit()
+    '''
+
+    index2word = sorted(list(parser.vocabulary))
+    word2index = {word: i for i, word in enumerate(index2word)}
     wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
 
     learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
     output = learner.train(parser.trainingInstances[parser.singlePredicate])
-    print(output)

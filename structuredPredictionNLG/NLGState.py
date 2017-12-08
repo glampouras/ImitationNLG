@@ -14,7 +14,7 @@ from torch.autograd import Variable
 '''
 class NLGState(imitation.State):
 
-    def __init__(self, contentPredictor, datasetInstance, useExpertContent=False):
+    def __init__(self, contentPredictor, datasetInstance, useExpertContent=False, useAllEvalRefs=False):
         self.actionsTaken = []
         self.tokensProduced = []
         self.RNNState = []
@@ -27,6 +27,24 @@ class NLGState(imitation.State):
                 self.agenda = deque(self.optimalContentPolicy())
             else:
                 self.agenda = deque(contentPredictor.rollContentSequence_withLearnedPolicy(datasetInstance))
+
+            if not useAllEvalRefs:
+                # TODO: If this works, might wanna introduce cache to save time (or do during parsing of the dataset)
+                agenda_attributes = [o[0] for o in self.agenda]
+                evaluationReferenceActionSequences_that_follow_agenda = []
+                for sequence in self.datasetInstance.output.evaluationReferenceActionSequences:
+                    currentAttr = ""
+                    ref_attributes = []
+                    for act in sequence:
+                        if act.attribute != currentAttr and act.attribute != Action.TOKEN_EOS:
+                            ref_attributes.append(act.attribute)
+                            currentAttr = act.attribute
+                    if ref_attributes == agenda_attributes:
+                        evaluationReferenceActionSequences_that_follow_agenda.append(sequence)
+                datasetInstance.output.evaluationReferenceActionSequences_that_follow_agenda = evaluationReferenceActionSequences_that_follow_agenda
+            else:
+                datasetInstance.output.evaluationReferenceActionSequences_that_follow_agenda = datasetInstance.output.evaluationReferenceActionSequences
+
 
             # Shift first attribute
             # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
@@ -92,7 +110,7 @@ class NLGState(imitation.State):
             costVector[Action.TOKEN_EOS] = 0.0
         else:
             rollIn = [o.label.lower() for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]
-            for ref in self.datasetInstance.output.evaluationReferenceActionSequences:
+            for ref in self.datasetInstance.output.evaluationReferenceActionSequences_that_follow_agenda:
                 for i in range(0, len(ref)):
                     # Do not repeat the same word twice in a row
                     if not self.actionsTaken or ref[i].label != self.actionsTaken[-1].label.lower():

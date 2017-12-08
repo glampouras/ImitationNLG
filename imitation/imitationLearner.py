@@ -24,7 +24,7 @@ class ImitationLearner(object):
     # the predicted structured output is returned in the end
     #@profile
     def predict(self, structuredInstance, state=None, optimalPolicyProb=0.0, calcRollOutCostVectors=False):
-        if state== None:
+        if state == None:
             state = self.stateType()
 
         # if we haven't started predicting, initialize the state for prediction
