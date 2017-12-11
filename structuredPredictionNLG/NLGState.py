@@ -143,8 +143,10 @@ class NLGState(imitation.State):
                 return Action.TOKEN_EOS, costVector
             else:
                 return Action.TOKEN_SHIFT, costVector
-        if Action.TOKEN_SHIFT in bestLabels:
-            return Action.TOKEN_SHIFT, costVector
+        # if Action.TOKEN_SHIFT in bestLabels:
+        #    return Action.TOKEN_SHIFT, costVector
+        if len(bestLabels) > 1 and Action.TOKEN_SHIFT in bestLabels:
+            bestLabels.remove(Action.TOKEN_SHIFT)
         bestLabel = bestLabels.pop()
         return bestLabel, costVector
 
