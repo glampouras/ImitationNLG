@@ -50,10 +50,6 @@ class NLGState(imitation.State):
             # self.actionsTaken.append(Action(Action.TOKEN_SHIFT, self.agenda[0][0]))
             # Add a @go@ symbol to initialise decoding
             self.tokensProduced.append(Action(Action.TOKEN_GO, self.agenda[0][0]))
-            # TODO: where to put this?
-            self.RNNState.append(
-                (Variable(torch.zeros(1, 100)),
-                 Variable(torch.zeros(1, 100))))
         '''
         if isinstance(sequence, self.__class__):
             copySeq = sequence.actionsTaken
@@ -129,6 +125,7 @@ class NLGState(imitation.State):
 
                             if refCost.loss < costVector[ref[i].label]:
                                 costVector[ref[i].label] = refCost.loss
+                            # kc391: this logic is broken: we need to worry more about how we handle the cost of the shift action
                             if ref[i].attribute != self.agenda[0][0]:
                                 if refCost.loss < costVector[Action.TOKEN_SHIFT]:
                                     costVector[Action.TOKEN_SHIFT] = refCost.loss

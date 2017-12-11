@@ -573,6 +573,10 @@ def inferNaiveAlignments(sequence, useHardAlignments=True):
 
 
 if __name__ == '__main__':
+    import argparse
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('--cuda', action='store_true', default=False)
+    args = argparser.parse_args()
     # load the training data!
     # parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E', False)
     parser = DatasetParser(r'../toyData/toy_trainset.csv', r'../toyData/toy_devset.csv', False, 'toy_E2E', True)
@@ -651,7 +655,9 @@ if __name__ == '__main__':
 
     index2word = sorted(list(parser.vocabulary))
     word2index = {word: i for i, word in enumerate(index2word)}
-    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
+    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 101, 102)
+    if args.cuda:
+        wordPredictor.cuda()
 
     learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
     output = learner.train(parser.trainingInstances[parser.singlePredicate])

@@ -7,6 +7,7 @@ from collections import defaultdict
 from structuredPredictionNLG.Action import Action
 
 import random
+import tqdm
 
 class ImitationLearner(object):
 
@@ -36,13 +37,16 @@ class ImitationLearner(object):
 
         # predict all remainins actions
         # if we do not have any actions we are done
+        initial_hidden = self.model.init_hidden()
+        state.RNNState.append(initial_hidden)
         while len(state.agenda) > 0:
             # update the RNN hidden state to take into account the previous
             # action taken, regardless of whether it came from the expert or
             # from the RNN
+            # TODO: state.getRNNFeatures deprecated, get input word directly
             input_word, hidden_state = state.getRNNFeatures()
             index = self.word2index[input_word.label]
-            action_probs, new_state = self.model.predict(index, hidden_state)
+            action_probs, new_state = self.model(index, hidden_state)
             # the first condition is to avoid un-necessary calls to random which give me reproducibility headaches
             expert_action, expert_costVector = state.optimalPolicy()
             expert_action = self.convertLabelToAction(expert_action, state)
@@ -197,11 +201,11 @@ class ImitationLearner(object):
             print("------------------------")
             print("Iteration:" + str(iteration) + ", optimal policy prob:" + str(optimalPolicyProb))
 
-            for structuredInstance in structuredInstances:
-
+            for structuredInstance in tqdm.tqdm(structuredInstances, ncols=120):
                 state = self.stateType(self.content_model, structuredInstance, True)
                 # so we obtain the predicted output and the actions taken are in state
                 # this prediction uses the gold standard since we need this info for the optimal policy actions
+                self.model.zero_grad()
                 prediction = self.predict(structuredInstance, state, optimalPolicyProb)
 
                 # Convert expert actions to labels

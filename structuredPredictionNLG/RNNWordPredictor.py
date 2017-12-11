@@ -13,15 +13,25 @@ class RNNNLGState(object):
         self.actions_taken.append(action)
 
 
-class RNNWordPredictorModel(nn.Module):
+class RNNWordPredictor(nn.Module):
     def __init__(self, vocab_size, embedding_size, hidden_size):
-        super(RNNWordPredictorModel, self).__init__()
+        super(RNNWordPredictor, self).__init__()
+
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
 
         self.input_embeddings = nn.Embedding(vocab_size, embedding_size)
         self.lstm_cell = nn.LSTMCell(embedding_size, hidden_size)
         self.output_projection = nn.Linear(hidden_size, vocab_size)
 
         self.softmax = nn.LogSoftmax()
+
+        self.loss = nn.NLLLoss()
+        self.optimizer = torch.optim.Adam(self.parameters())
+
+    @property
+    def is_cuda(self):
+        return next(self.parameters()).is_cuda
 
     def forward(self, input, state):
         '''
@@ -34,8 +44,12 @@ class RNNWordPredictorModel(nn.Module):
             new_state: updated state
         '''
 
+        input_var = Variable(torch.LongTensor(np.array([input])))
+        if self.is_cuda:
+            input_var = input_var.cuda()
+
         # Embed the input word
-        input_embed = self.input_embeddings(input)
+        input_embed = self.input_embeddings(input_var)
 
         # Calculate the new hidden state
         new_hidden, new_cell = self.lstm_cell(input_embed, state)
@@ -45,45 +59,25 @@ class RNNWordPredictorModel(nn.Module):
 
         return (self.softmax(logits), (new_hidden, new_cell))
 
+    def init_hidden(self):
+        if self.is_cuda:
+            return (Variable(torch.zeros(1, self.hidden_size).cuda()),
+                    Variable(torch.zeros(1, self.hidden_size).cuda()))
+        else:
+            return (Variable(torch.zeros(1, self.hidden_size)),
+                    Variable(torch.zeros(1, self.hidden_size)))
 
-class RNNWordPredictor(object):
-    """Needs to implement sklearn model interface, i.e. .fit() and .predict()
-    """
-    def __init__(self, vocab_size, embed_size, hidden_size):
-
-        self.model = RNNWordPredictorModel(vocab_size, embed_size, hidden_size)
-        self.loss = nn.NLLLoss()
-
-        self.optimizer = torch.optim.Adam(self.model.parameters())
-
-    def predict(self, input_word_index, hidden_state):
-        # The features should be at least a tuple of (input word, state)
-        # state itself is a tuple of (hidden state, cell state)
-        log_probs, new_state = self.model(Variable(torch.LongTensor([input_word_index])), hidden_state)
-
-        return (log_probs, new_state)
-
-    def fit(self, action_costs, encoded_labels):
-        # training_data: features to make a prediction
-        # encoded_labels: what the correct prediction should be
-
-        # Actually, all we need to record as the feature structure is the
-        # word and the hidden state, as they suffice to make the prediction
-
-        # Although the hidden state is only a summary of the words so far
-        # GIVEN THE CURRENT PARAMETERS, so we might have to aggregate updates
-        # for everything in training_data - worries about batch size?
-
-        # It's fine if we assume structuredInstances is a batch of training data
-
-        loss = 0
-        counter = 0
+    def zero_grad(self):
         self.optimizer.zero_grad()
-        for action_cost, label in zip(action_costs, encoded_labels):
-            loss += self.loss(action_cost, Variable(torch.LongTensor([label])))
-            counter += 1
 
-        loss /= counter
+    def fit(self, probs, labels):
+        loss = 0.0
+        probs = torch.cat(probs, dim=0)
+        labels = Variable(torch.LongTensor((list(labels))))
+        if self.is_cuda:
+            labels = labels.cuda()
+        loss = self.loss(probs, labels)
+
         loss.backward()
         self.optimizer.step()
 
