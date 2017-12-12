@@ -123,12 +123,12 @@ class NLGState(imitation.State):
                                 rollOutSeq.extend([o.label for o in ref[i:]])
                             refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
 
-                            if refCost.loss < costVector[ref[i].label]:
-                                costVector[ref[i].label] = refCost.loss
                             # kc391: this logic is broken: we need to worry more about how we handle the cost of the shift action
                             if ref[i].attribute != self.agenda[0][0]:
                                 if refCost.loss < costVector[Action.TOKEN_SHIFT]:
                                     costVector[Action.TOKEN_SHIFT] = refCost.loss
+                            elif refCost.loss < costVector[ref[i].label]:
+                                costVector[ref[i].label] = refCost.loss
 
         minCost = min(costVector.values())
         if minCost != 0.0:
