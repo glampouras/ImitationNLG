@@ -204,10 +204,11 @@ class ImitationLearner(object):
         for act in state.actionsTaken:
             if act.label != Action.TOKEN_SHIFT and act.label != Action.TOKEN_EOS:
                 if act.label in state.datasetInstance.input.delexicalizationMap:
-                    real.append(state.datasetInstance.input.delexicalizationMap[act.label])
+                    for w in state.datasetInstance.input.delexicalizationMap[act.label].split(" "):
+                        real.append(w)
                 else:
                     real.append(act.label)
-        return (" ".join([o for o in real])).strip()
+        return real
 
     class params(object):
         def __init__(self):
@@ -256,9 +257,8 @@ class ImitationLearner(object):
             realization = self.stateToPrediction(state)
             print("--------------------------------------")
             print(structuredInstance.input.MRstr)
-            print(state.actionsTaken)
             print(realization)
-            stats = structuredInstance.output.compareAgainst(realization)
+            stats = structuredInstance.output.evaluate(realization)
 
             avgBLEU += stats.BLEU
         avgBLEU /= len(structuredInstances)

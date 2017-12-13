@@ -155,8 +155,8 @@ class NLGOutput(imitation.StructuredOutput):
         maxBLEU = 0.0
         if predicted:
             if len(predicted) >= 4:
-                for ref in self.evaluationReferenceSequences:
-                    bleuOriginal = sentence_bleu([ref], predicted)
+                for ref in self.evaluationReferences:
+                    bleuOriginal = sentence_bleu([ref.split(" ")], predicted)
                     if bleuOriginal > maxBLEU:
                         maxBLEU = bleuOriginal
 
