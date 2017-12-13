@@ -124,10 +124,10 @@ class NLGOutput(imitation.StructuredOutput):
 
         maxBLEU = 0.0
         if predicted:
+            weights = (0.25, 0.25, 0.25, 0.25)
+            if len(predicted) < 4:
+                weights = (1 / len(predicted),) * len(predicted)
             for ref in self.evaluationReferenceSequences:
-                weights = (0.25, 0.25, 0.25, 0.25)
-                if len(predicted) < 4:
-                    weights = (1 / len(predicted),) * len(predicted)
                 bleuOriginal = sentence_bleu([ref], predicted, weights, smoothing_function=self.chencherry.method2)
                 if bleuOriginal > maxBLEU:
                     maxBLEU = bleuOriginal
@@ -145,6 +145,33 @@ class NLGOutput(imitation.StructuredOutput):
                 '''
         evalStats.BLEU = maxBLEU
         evalStats.loss = 1.0 - maxBLEU
+        return evalStats
+
+
+    # it must return an evalStats object with a loss
+    def evaluate(self, predicted):
+        evalStats = NLGEvalStats()
+
+        maxBLEU = 0.0
+        if predicted:
+            if len(predicted) >= 4:
+                for ref in self.evaluationReferenceSequences:
+                    bleuOriginal = sentence_bleu([ref], predicted)
+                    if bleuOriginal > maxBLEU:
+                        maxBLEU = bleuOriginal
+
+                    # todo resolve issues with Rouge library, add it to cost metric
+                    '''
+                    maxROUGE = 0.0;
+                    for ref in refs:
+                        scores = rouge.get_scores(ref.lower(), gen.lower())
+                        print(scores)
+                        exit()
+                        if bleuOriginal > maxROUGE:
+                            maxROUGE = bleuOriginal
+                    return (maxBLEU + maxROUGE) / 2.0
+                    '''
+        evalStats.BLEU = maxBLEU
         return evalStats
 
 

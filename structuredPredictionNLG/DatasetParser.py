@@ -12,6 +12,8 @@ import re
 import Levenshtein
 import _pickle as pickle
 from nltk.util import ngrams
+import sys
+
 
 '''
  This is a general specification of a DatasetParser.
@@ -661,3 +663,10 @@ if __name__ == '__main__':
 
     learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
     output = learner.train(parser.trainingInstances[parser.singlePredicate])
+
+    # Evaluate on training instances for sanity checks
+    #learner.evaluate(parser.trainingInstances[parser.singlePredicate])
+
+    # Properly evaluate on development instances
+    # Dont call this for the testing instances; it wont work as those don't have available references for automatic evaluation
+    learner.evaluate(parser.developmentInstances[parser.singlePredicate])

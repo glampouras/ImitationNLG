@@ -6,6 +6,34 @@ from collections import deque
 from collections import defaultdict
 import torch
 from torch.autograd import Variable
+from threading import Thread
+from queue import Queue
+
+
+class OptimalPolicyThread(Thread):
+    def __init__(self, queue, costVector):
+        Thread.__init__(self)
+        self.queue = queue
+        self.costVector = costVector
+
+    def run(self):
+        while True:
+            # Get the work from the queue and expand the tuple
+            state, rollIn, ref, index = self.queue.get()
+            self.costVector[index] = self.get_optimal_cost(state, rollIn, ref)
+            self.queue.task_done()
+
+    def get_optimal_cost(self, state, rollIn, ref):
+        if ref[0].label == Action.TOKEN_EOS:
+            return state.datasetInstance.output.compareAgainst(rollIn[:]).loss
+        else:
+            rollOutSeq = rollIn[:]
+            if ref[-1].label == Action.TOKEN_EOS:
+                rollOutSeq.extend([o.label for o in ref[:-1]])
+            else:
+                rollOutSeq.extend([o.label for o in ref])
+            return state.datasetInstance.output.compareAgainst(rollOutSeq).loss
+
 
 '''
  Each NLGState consists of an ArrayList of Actions.
@@ -13,6 +41,15 @@ from torch.autograd import Variable
  and is populated with word actions, each corresponding to one of the preceding content actions.
 '''
 class NLGState(imitation.State):
+    # Set up the threads for the optimal policy
+    threadQueue = Queue()
+    threadCostVector = defaultdict(lambda: 1.0)
+    # Create 8 worker threads
+    for x in range(8):
+        worker = OptimalPolicyThread(threadQueue, threadCostVector)
+        # Setting daemon to True will let the main thread exit even though the workers are blocking
+        worker.daemon = True
+        worker.start()
 
     def __init__(self, contentPredictor, datasetInstance, useExpertContent=False, useAllEvalRefs=False):
         self.actionsTaken = []
@@ -91,14 +128,11 @@ class NLGState(imitation.State):
         return list([(attr, self.datasetInstance.input.attributeValues[attr]) for attr in seq])
 
     def optimalPolicy(self):
-        availableWords = set()
         seqLen = len([o for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS])
         isSeqLongerThanAllRefs = True
         for indirectRef in self.datasetInstance.output.evaluationReferenceActionSequences:
             if seqLen < len(indirectRef):
                 isSeqLongerThanAllRefs = False
-            for action in indirectRef:
-                availableWords.add(action.label)
         costVector = defaultdict(lambda: 1.0)
 
         # If the sequence is longer than all the available references, it has gone on too far and should stop
@@ -107,28 +141,23 @@ class NLGState(imitation.State):
         else:
             rollIn = [o.label.lower() for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS]
             for ref in self.datasetInstance.output.evaluationReferenceActionSequences_that_follow_agenda:
+                NLGState.threadCostVector.clear()
+                # Put the tasks into the queue as a tuple
                 for i in range(0, len(ref)):
                     # Do not repeat the same word twice in a row
                     if not self.actionsTaken or ref[i].label != self.actionsTaken[-1].label.lower():
-                        if ref[i].label == Action.TOKEN_EOS:
-                            rollOutSeq = rollIn[:]
-                            refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
-                            if refCost.loss < costVector[Action.TOKEN_EOS]:
-                                costVector[Action.TOKEN_EOS] = refCost.loss
-                        else:
-                            rollOutSeq = rollIn[:]
-                            if ref[-1].label == Action.TOKEN_EOS:
-                                rollOutSeq.extend([o.label for o in ref[i:-1]])
-                            else:
-                                rollOutSeq.extend([o.label for o in ref[i:]])
-                            refCost = self.datasetInstance.output.compareAgainst(rollOutSeq)
-
-                            # kc391: this logic is broken: we need to worry more about how we handle the cost of the shift action
-                            if ref[i].attribute != self.agenda[0][0]:
-                                if refCost.loss < costVector[Action.TOKEN_SHIFT]:
-                                    costVector[Action.TOKEN_SHIFT] = refCost.loss
-                            elif refCost.loss < costVector[ref[i].label]:
-                                costVector[ref[i].label] = refCost.loss
+                        NLGState.threadQueue.put((self, rollIn, ref[i:], i))
+                # Causes the main thread to wait for the queue to finish processing all the tasks
+                NLGState.threadQueue.join()
+                for i in range(0, len(ref)):
+                    refCost = NLGState.threadCostVector[i]
+                    # kc391: this logic is broken: we need to worry more about how we handle the cost of the shift action
+                    # Makis: Changed this to not allow subsequent shifts
+                    if ref[i].attribute != self.agenda[0][0] and self.actionsTaken and self.actionsTaken[-1].label != Action.TOKEN_SHIFT:
+                        if refCost < costVector[Action.TOKEN_SHIFT]:
+                            costVector[Action.TOKEN_SHIFT] = refCost
+                    elif refCost < costVector[ref[i].label]:
+                        costVector[ref[i].label] = refCost
 
         minCost = min(costVector.values())
         if minCost != 0.0:
@@ -274,3 +303,4 @@ class NLGState(imitation.State):
 
     def __hash__(self):
         return hash(self.getWordSequenceToString())
+

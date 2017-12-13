@@ -71,6 +71,29 @@ class ImitationLearner(object):
                                    expert_action, expert_action_taken,
                                    structuredInstance)
 
+    def predict_for_evaluation(self, structuredInstance, state=None):
+        if state == None:
+            state = self.stateType()
+
+        # predict all remainins actions
+        # if we do not have any actions we are done
+        initial_hidden = self.model.init_hidden()
+        state.RNNState.append(initial_hidden)
+        while len(state.agenda) > 0:
+            # update the RNN hidden state to take into account the previous action taken
+            # TODO: state.getRNNFeatures deprecated, get input word directly
+            input_word, hidden_state = state.getRNNFeatures()
+            index = self.word2index[input_word.label]
+            action_probs, new_state = self.model(index, hidden_state)
+
+            # Take the model prediction
+            label = action_probs.data.numpy().argmax()
+            current_action = self.convertLabelToAction(self.index2word[label], state)
+
+            # add the action to the state making any necessary updates
+            state.updateWithAction(current_action, new_state, action_probs,
+                                   False, False, structuredInstance)
+
     def learnedPolicy_rollOut(self, structuredInstance, currState):
         costVector = defaultdict(lambda: 1.0)
         for alt_label in self.word2index.keys():
@@ -218,3 +241,25 @@ class ImitationLearner(object):
                 print(state.expertActions)
                 print(state.actionsTaken[1:])
                 print(state.expertActionsTaken)
+
+    def evaluate(self, structuredInstances):
+        print("------------------------")
+        print("Evaluating instances")
+
+        avgBLEU = 0.0
+        for structuredInstance in structuredInstances:
+            state = self.stateType(self.content_model, structuredInstance, False)
+
+            self.model.zero_grad()
+            self.predict_for_evaluation(structuredInstance, state)
+
+            realization = self.stateToPrediction(state)
+            print("--------------------------------------")
+            print(structuredInstance.input.MRstr)
+            print(state.actionsTaken)
+            print(realization)
+            stats = structuredInstance.output.compareAgainst(realization)
+
+            avgBLEU += stats.BLEU
+        avgBLEU /= len(structuredInstances)
+        print("BLEU:", avgBLEU)
