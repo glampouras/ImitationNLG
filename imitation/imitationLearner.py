@@ -11,11 +11,13 @@ import tqdm
 
 class ImitationLearner(object):
 
-    def __init__(self, model, content_model, word2index, index2word, stateType):
+    def __init__(self, model, content_model, word2index, index2word, attr2index, val2index, stateType):
         self.model = model
         self.content_model = content_model
         self.word2index = word2index
         self.index2word = index2word
+        self.attr2index = attr2index
+        self.val2index = val2index
         self.stateType = stateType
 
     # this function predicts an instance given the state
@@ -44,9 +46,12 @@ class ImitationLearner(object):
             # action taken, regardless of whether it came from the expert or
             # from the RNN
             # TODO: state.getRNNFeatures deprecated, get input word directly
+            attribute, value = state.agenda[0]
             input_word, hidden_state = state.getRNNFeatures()
-            index = self.word2index[input_word.label]
-            action_probs, new_state = self.model(index, hidden_state)
+            word_index = self.word2index[input_word.label]
+            attr_index = self.attr2index[attribute]
+            val_index = self.val2index[value]
+            action_probs, new_state = self.model(word_index, attr_index, val_index, hidden_state)
             # the first condition is to avoid un-necessary calls to random which give me reproducibility headaches
             expert_action, expert_costVector = state.optimalPolicy()
             expert_action = self.convertLabelToAction(expert_action, state)
@@ -59,7 +64,7 @@ class ImitationLearner(object):
                 expert_action_taken = True
             else:
                 # Take the model prediction
-                label = action_probs.data.numpy().argmax()
+                label = action_probs.data.cpu().numpy().argmax()
                 if calcRollOutCostVectors:
                     current_costVector = self.learnedPolicy_rollOut(structuredInstance, state)
                 current_action = self.convertLabelToAction(self.index2word[label], state)
@@ -87,7 +92,7 @@ class ImitationLearner(object):
             action_probs, new_state = self.model(index, hidden_state)
 
             # Take the model prediction
-            label = action_probs.data.numpy().argmax()
+            label = action_probs.data.cpu().numpy().argmax()
             current_action = self.convertLabelToAction(self.index2word[label], state)
 
             # add the action to the state making any necessary updates

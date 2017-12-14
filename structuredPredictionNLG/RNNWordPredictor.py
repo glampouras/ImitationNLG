@@ -14,13 +14,16 @@ class RNNNLGState(object):
 
 
 class RNNWordPredictor(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size):
+    def __init__(self, vocab_size, attr_vocab_size, val_vocab_size,
+                 embedding_size, hidden_size):
         super(RNNWordPredictor, self).__init__()
 
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
 
-        self.input_embeddings = nn.Embedding(vocab_size, embedding_size)
+        self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
+        self.attr_embeddings = nn.Embedding(attr_vocab_size, embedding_size)
+        self.val_embeddings = nn.Embedding(val_vocab_size, embedding_size)
         self.lstm_cell = nn.LSTMCell(embedding_size, hidden_size)
         self.output_projection = nn.Linear(hidden_size, vocab_size)
 
@@ -33,10 +36,12 @@ class RNNWordPredictor(nn.Module):
     def is_cuda(self):
         return next(self.parameters()).is_cuda
 
-    def forward(self, input, state):
+    def forward(self, word, attr, val, state):
         '''
         Args:
-            input: word index
+            word: word index
+            attr: attribute index
+            val: the value of the attribute (if applicable)
             state: state at previous timestep
 
         Returns:
@@ -44,15 +49,24 @@ class RNNWordPredictor(nn.Module):
             new_state: updated state
         '''
 
-        input_var = Variable(torch.LongTensor(np.array([input])))
-        if self.is_cuda:
-            input_var = input_var.cuda()
+        word_var = Variable(torch.LongTensor(np.array([word])))
+        attr_var = Variable(torch.LongTensor(np.array([attr])))
+        val_var = Variable(torch.LongTensor(np.array([val])))
 
-        # Embed the input word
-        input_embed = self.input_embeddings(input_var)
+        if self.is_cuda:
+            word_var = word_var.cuda()
+            attr_var = attr_var.cuda()
+            val_var = val_var.cuda()
+
+        # Embed the inputs
+        word_embed = self.word_embeddings(word_var)
+        attr_embed = self.attr_embeddings(attr_var)
+        val_embed = self.val_embeddings(val_var)
+
+        embed = word_embed + attr_embed + val_embed
 
         # Calculate the new hidden state
-        new_hidden, new_cell = self.lstm_cell(input_embed, state)
+        new_hidden, new_cell = self.lstm_cell(embed, state)
 
         # Calculate the log-likelihoods of the next action
         logits = self.output_projection(new_hidden)

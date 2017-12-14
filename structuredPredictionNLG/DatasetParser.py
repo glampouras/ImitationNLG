@@ -580,8 +580,8 @@ if __name__ == '__main__':
     argparser.add_argument('--cuda', action='store_true', default=False)
     args = argparser.parse_args()
     # load the training data!
-    # parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E', False)
-    parser = DatasetParser(r'../toyData/toy_trainset.csv', r'../toyData/toy_devset.csv', False, 'toy_E2E', True)
+    parser = DatasetParser(r'../data/trainset.csv', r'../data/devset.csv', r'../data/test_e2e.csv', 'E2E', False)
+    # parser = DatasetParser(r'../toyData/toy_trainset.csv', r'../toyData/toy_devset.csv', False, 'toy_E2E', True)
 
     if parser.trainingInstances:
         print("Training data size:", len(parser.trainingInstances[parser.singlePredicate]))
@@ -592,8 +592,8 @@ if __name__ == '__main__':
     print("-----------------------")
 
     # Use these two calls to trim training instances down to a single reference
-    #parser.initializeActionSpace()
-    #parser.trimTrainingSpace()
+    parser.initializeActionSpace()
+    parser.trimTrainingSpace()
 
     # Test that loading was correct
     '''
@@ -635,12 +635,6 @@ if __name__ == '__main__':
     parser.vocabulary.add('@shift@')
     parser.vocabulary.add('@eos@')
     # Example of using the expert policy for word prediction
-
-    index2word = sorted(list(parser.vocabulary))
-    word2index = {word: i for i, word in enumerate(index2word)}
-    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 100, 100)
-    learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
-
     '''
     for di in parser.trainingInstances[parser.singlePredicate]:
         act = False
@@ -657,11 +651,22 @@ if __name__ == '__main__':
 
     index2word = sorted(list(parser.vocabulary))
     word2index = {word: i for i, word in enumerate(index2word)}
-    wordPredictor = RNNWordPredictor(len(parser.vocabulary), 101, 102)
+
+    attributes = set()
+    for attrs in parser.attributes.values():
+        attributes.update(attrs)
+    index2attr = sorted(list(attributes))
+    attr2index = {attr: i for i, attr in enumerate(index2attr)}
+
+    index2vals = sorted(list(parser.valueAlignments.keys()))
+    index2vals.extend(['@x@name_0', '@x@near_0'])
+    vals2index = {val: i for i, val in enumerate(index2vals)}
+
+    wordPredictor = RNNWordPredictor(len(index2word), len(index2attr), len(index2vals), 101, 102)
     if args.cuda:
         wordPredictor.cuda()
 
-    learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, NLGState)
+    learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, attr2index, vals2index, NLGState)
     output = learner.train(parser.trainingInstances[parser.singlePredicate])
 
     # Evaluate on training instances for sanity checks
