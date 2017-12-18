@@ -8,6 +8,7 @@ from structuredPredictionNLG.Action import Action
 
 import random
 import tqdm
+import sys
 
 class ImitationLearner(object):
 
@@ -77,27 +78,7 @@ class ImitationLearner(object):
                                    structuredInstance)
 
     def predict_for_evaluation(self, structuredInstance, state=None):
-        if state == None:
-            state = self.stateType()
-
-        # predict all remainins actions
-        # if we do not have any actions we are done
-        initial_hidden = self.model.init_hidden()
-        state.RNNState.append(initial_hidden)
-        while len(state.agenda) > 0:
-            # update the RNN hidden state to take into account the previous action taken
-            # TODO: state.getRNNFeatures deprecated, get input word directly
-            input_word, hidden_state = state.getRNNFeatures()
-            index = self.word2index[input_word.label]
-            action_probs, new_state = self.model(index, hidden_state)
-
-            # Take the model prediction
-            label = action_probs.data.cpu().numpy().argmax()
-            current_action = self.convertLabelToAction(self.index2word[label], state)
-
-            # add the action to the state making any necessary updates
-            state.updateWithAction(current_action, new_state, action_probs,
-                                   False, False, structuredInstance)
+        self.predict(structuredInstance, state, 0.0, False)
 
     def learnedPolicy_rollOut(self, structuredInstance, currState):
         costVector = defaultdict(lambda: 1.0)
@@ -222,7 +203,7 @@ class ImitationLearner(object):
 
     #@profile
     # todo remove stages from train
-    def train(self, structuredInstances):
+    def train(self, structuredInstances, devStructuredInstances):
         # for each iteration
         for iteration in range(10):
             # set the optimal policy prob
@@ -242,15 +223,20 @@ class ImitationLearner(object):
                              [action.label for action in state.expertActions])
                 # see what the model predictions were and compare to the expert
                 loss = self.model.fit(state.actionProbsCache, labels)
+                print()
                 print(loss)
                 print(self.stateToPrediction(state))
-                print(state.expertActions)
-                print(state.actionsTaken[1:])
-                print(state.expertActionsTaken)
 
-    def evaluate(self, structuredInstances):
-        print("------------------------")
-        print("Evaluating instances")
+            self.evaluate(devStructuredInstances, 'dev', iteration)
+
+    def evaluate(self, structuredInstances, filename=None, epoch=None):
+        if filename:
+            f = open(filename, 'a')
+        else:
+            f = sys.stdout
+
+        print("------------------------", file=f)
+        print("Evaluating instances for epoch {}".format(epoch), file=f)
 
         avgBLEU = 0.0
         for structuredInstance in structuredInstances:
@@ -260,11 +246,14 @@ class ImitationLearner(object):
             self.predict_for_evaluation(structuredInstance, state)
 
             realization = self.stateToPrediction(state)
-            print("--------------------------------------")
+            print("--------------------------------------", file=f)
             print(structuredInstance.input.MRstr)
             print(realization)
             stats = structuredInstance.output.evaluate(realization)
 
             avgBLEU += stats.BLEU
         avgBLEU /= len(structuredInstances)
-        print("BLEU:", avgBLEU)
+        print("BLEU:", avgBLEU, file=f)
+
+        f.flush()
+        f.close()

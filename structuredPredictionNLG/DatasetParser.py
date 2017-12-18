@@ -662,16 +662,9 @@ if __name__ == '__main__':
     index2vals.extend(['@x@name_0', '@x@near_0'])
     vals2index = {val: i for i, val in enumerate(index2vals)}
 
-    wordPredictor = RNNWordPredictor(len(index2word), len(index2attr), len(index2vals), 101, 102)
+    wordPredictor = RNNWordPredictor(len(index2word), len(index2attr), len(index2vals), 300, 300)
     if args.cuda:
         wordPredictor.cuda()
 
     learner = imitation.ImitationLearner(wordPredictor, contentPredictor, word2index, index2word, attr2index, vals2index, NLGState)
-    output = learner.train(parser.trainingInstances[parser.singlePredicate])
-
-    # Evaluate on training instances for sanity checks
-    #learner.evaluate(parser.trainingInstances[parser.singlePredicate])
-
-    # Properly evaluate on development instances
-    # Dont call this for the testing instances; it wont work as those don't have available references for automatic evaluation
-    learner.evaluate(parser.developmentInstances[parser.singlePredicate])
+    output = learner.train(parser.trainingInstances[parser.singlePredicate], parser.developmentInstances[parser.singlePredicate])

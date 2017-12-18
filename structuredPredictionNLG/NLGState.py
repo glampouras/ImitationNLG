@@ -129,10 +129,7 @@ class NLGState(imitation.State):
 
     def optimalPolicy(self):
         seqLen = len([o for o in self.actionsTaken if o.label != Action.TOKEN_SHIFT and o.label != Action.TOKEN_EOS])
-        isSeqLongerThanAllRefs = True
-        for indirectRef in self.datasetInstance.output.evaluationReferenceActionSequences:
-            if seqLen < len(indirectRef):
-                isSeqLongerThanAllRefs = False
+        isSeqLongerThanAllRefs = all(seqLen > len(x) + 5 for x in self.datasetInstance.output.evaluationReferenceActionSequences_that_follow_agenda)
         costVector = defaultdict(lambda: 1.0)
 
         # If the sequence is longer than all the available references, it has gone on too far and should stop
@@ -144,8 +141,8 @@ class NLGState(imitation.State):
                 NLGState.threadCostVector.clear()
                 # Put the tasks into the queue as a tuple
                 for i in range(0, len(ref)):
-                    # Do not repeat the same word twice in a row
-                    if not self.actionsTaken or ref[i].label != self.actionsTaken[-1].label.lower():
+                    # Do not repeat the same word again if we've already predicted it recently
+                    if not self.actionsTaken or ref[i].label not in {x.label.lower() for x in self.actionsTaken[-3:]}:
                         NLGState.threadQueue.put((self, rollIn, ref[i:], i))
                 # Causes the main thread to wait for the queue to finish processing all the tasks
                 NLGState.threadQueue.join()
